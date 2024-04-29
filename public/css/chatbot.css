@@ -1,0 +1,50 @@
+/**
+ * All of the CSS for your public-facing functionality should be
+ * included in this file.
+ */
+
+ #chatbot-container {
+    position: fixed;
+    bottom: 0;
+    right: 10px;
+    width: 300px;
+    height: 400px;
+    border: 1px solid #ccc;
+    background-color: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease-in-out;
+    transform: translateY(100%);
+}
+
+#chatbot-header {
+    background-color: #0073aa;
+    color: #fff;
+    padding: 10px;
+    cursor: pointer;
+}
+
+#chatbot-body {
+    height: 360px;
+    display: none;
+}
+
+#chatbot-toggle-btn {
+    float: right;
+    border: none;
+    background-color: transparent;
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.chatbot-open #chatbot-body {
+    display: block;
+}
+
+.chatbot-open #chatbot-container {
+    transform: translateY(0);
+}
+
+.chatbot-closed #chatbot-container {
+    transform: translateY(calc(100% - 40px)); /* Mostra solo l'header */
+}
