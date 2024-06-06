@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@wordpress/api-fetch": "^6.55.0"
+  },
+  "devDependencies": {
+    "webpack-cli": "^5.1.4"
+  }
+}

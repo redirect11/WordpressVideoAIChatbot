@@ -1,10 +1,9 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
-import App from './App';
+import { createRoot } from 'react-dom/client';
+import VideoAiChatbot from './components/VideoAiChatbot';
+import { StrictMode } from 'react';
 
-ReactDOM.render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>,
-    document.getElementById('chatbot-app-root')
-  );
+const root = createRoot(document.getElementById('openai-chatbot'));
+root.render(<StrictMode>
+  <VideoAiChatbot />
+</StrictMode>);

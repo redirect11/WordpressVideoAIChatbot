@@ -1,0 +1,20 @@
+.react-chatbot-kit-chat-bot-custom-message-container {
+  display: flex;
+  margin: 15px 0;
+  justify-content: flex-start;
+}
+
+.react-chatbot-kit-chat-bot-custom-message {
+  background-color: #2898ec;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  color: #fff;
+  font-weight: medium;
+  position: relative;
+  width: unset;
+  margin-left: 0%;
+  text-align: left;
+}
+
+

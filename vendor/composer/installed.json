@@ -1,0 +1,141 @@
+{
+    "packages": [
+        {
+            "name": "justinrainbow/json-schema",
+            "version": "v5.2.13",
+            "version_normalized": "5.2.13.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/jsonrainbow/json-schema.git",
+                "reference": "fbbe7e5d79f618997bc3332a6f49246036c45793"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/jsonrainbow/json-schema/zipball/fbbe7e5d79f618997bc3332a6f49246036c45793",
+                "reference": "fbbe7e5d79f618997bc3332a6f49246036c45793",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3.3"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "~2.2.20||~2.15.1",
+                "json-schema/json-schema-test-suite": "1.2.0",
+                "phpunit/phpunit": "^4.8.35"
+            },
+            "time": "2023-09-26T02:20:38+00:00",
+            "bin": [
+                "bin/validate-json"
+            ],
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "5.0.x-dev"
+                }
+            },
+            "installation-source": "dist",
+            "autoload": {
+                "psr-4": {
+                    "JsonSchema\\": "src/JsonSchema/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Bruno Prieto Reis",
+                    "email": "bruno.p.reis@gmail.com"
+                },
+                {
+                    "name": "Justin Rainbow",
+                    "email": "justin.rainbow@gmail.com"
+                },
+                {
+                    "name": "Igor Wiedler",
+                    "email": "igor@wiedler.ch"
+                },
+                {
+                    "name": "Robert Schönthal",
+                    "email": "seroscho@googlemail.com"
+                }
+            ],
+            "description": "A library to validate a json schema.",
+            "homepage": "https://github.com/justinrainbow/json-schema",
+            "keywords": [
+                "json",
+                "schema"
+            ],
+            "support": {
+                "issues": "https://github.com/jsonrainbow/json-schema/issues",
+                "source": "https://github.com/jsonrainbow/json-schema/tree/v5.2.13"
+            },
+            "install-path": "../justinrainbow/json-schema"
+        },
+        {
+            "name": "orhanerday/open-ai",
+            "version": "5.1",
+            "version_normalized": "5.1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/orhanerday/open-ai.git",
+                "reference": "386c7f65a50cbfb0fbdbebcd72f7e6c7a6039c84"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/orhanerday/open-ai/zipball/386c7f65a50cbfb0fbdbebcd72f7e6c7a6039c84",
+                "reference": "386c7f65a50cbfb0fbdbebcd72f7e6c7a6039c84",
+                "shasum": ""
+            },
+            "require": {
+                "ext-curl": "*",
+                "ext-json": "*",
+                "php": ">=7.4"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.0",
+                "pestphp/pest": "^1.20",
+                "spatie/ray": "^1.28"
+            },
+            "time": "2024-01-25T06:43:19+00:00",
+            "type": "library",
+            "installation-source": "dist",
+            "autoload": {
+                "psr-4": {
+                    "Orhanerday\\OpenAi\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Orhan Erday",
+                    "email": "orhanerday@gmail.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "OpenAI GPT-3 Api Client in PHP",
+            "homepage": "https://github.com/orhanerday/open-ai",
+            "keywords": [
+                "open-ai",
+                "orhanerday"
+            ],
+            "support": {
+                "issues": "https://github.com/orhanerday/open-ai/issues",
+                "source": "https://github.com/orhanerday/open-ai/tree/5.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/orhanerday",
+                    "type": "github"
+                }
+            ],
+            "install-path": "../orhanerday/open-ai"
+        }
+    ],
+    "dev": true,
+    "dev-package-names": []
+}

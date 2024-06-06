@@ -2,3 +2,33 @@
  * All of the CSS for your admin-specific functionality should be
  * included in this file.
  */
+
+ .assistants-container {
+    max-width: 600px;
+    margin: auto;
+    text-align: center;
+}
+
+.assistants-title {
+    color: #1976D2;
+    margin-bottom: 20px;
+}
+
+.assistants-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+.assistants-list-item {
+    padding: 10px;
+    margin: 5px 0;
+    background: #E3F2FD;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.assistants-error-message {
+    color: #D32F2F;
+    padding: 20px;
+    font-size: 1.2rem;
+}

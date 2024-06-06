@@ -57,6 +57,9 @@ class Video_Ai_Chatbot {
 	 */
 	protected $version;
 
+
+	private $openai;
+
 	/**
 	 * Define the core functionality of the plugin.
 	 *
@@ -78,7 +81,6 @@ class Video_Ai_Chatbot {
 		$this->set_locale();
 		$this->define_admin_hooks();
 		$this->define_public_hooks();
-
 	}
 
 	/**
@@ -98,6 +100,8 @@ class Video_Ai_Chatbot {
 	 * @access   private
 	 */
 	private function load_dependencies() {
+
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'vendor/autoload.php';
 
 		/**
 		 * The class responsible for orchestrating the actions and filters of the
@@ -122,8 +126,10 @@ class Video_Ai_Chatbot {
 		 */
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'public/class-video-ai-chatbot-public.php';
 
-		$this->loader = new Video_Ai_Chatbot_Loader();
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-openai.php';
 
+		$this->loader = new Video_Ai_Chatbot_Loader();
+		$this->openai = new Video_Ai_OpenAi();
 	}
 
 	/**
@@ -152,13 +158,13 @@ class Video_Ai_Chatbot {
 	 */
 	private function define_admin_hooks() {
 
-		$plugin_admin = new Video_Ai_Chatbot_Admin( $this->get_plugin_name(), $this->get_version() );
-		$this->loader->add_action('admin_init', $plugin_admin, 'openai_assistant_settings_init');
+		$plugin_admin = new Video_Ai_Chatbot_Admin( $this->get_plugin_name(), $this->get_version(), $this->openai );
+		$this->loader->add_action( 'admin_init', $plugin_admin, 'openai_assistant_settings_init');
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'openai_assistant_admin_menu' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
-		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'openai_assistant_enqueue_scripts' );
-		
+		$this->loader->add_action( 'wp_ajax_openai_cancel_thread_options', $plugin_admin, 'delete_thread' );
+		$this->loader->add_action('rest_api_init', $this->openai, 'register_api_hooks');
 	}
 
 	/**
@@ -170,13 +176,13 @@ class Video_Ai_Chatbot {
 	 */
 	private function define_public_hooks() {
 
-		$plugin_public = new Video_Ai_Chatbot_Public( $this->get_plugin_name(), $this->get_version() );
-
+		$plugin_public = new Video_Ai_Chatbot_Public( $this->get_plugin_name(), $this->get_version(), $this->openai );
+		$this->loader->add_action( 'init', $plugin_public, 'init_cookies' );
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
 		$this->loader->add_shortcode('openai_assistant',  $plugin_public, 'openai_assistant_shortcode');
+		
 	}
-
 
 	
 

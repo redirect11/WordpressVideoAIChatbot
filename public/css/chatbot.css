@@ -1,50 +1,32 @@
-/**
- * All of the CSS for your public-facing functionality should be
- * included in this file.
- */
+.chatbot-toggle-button {
+    position: fixed;  /* Mantiene il bottone fisso nella viewport */
+    bottom: 20px;     /* Distanza dal fondo della viewport */
+    right: 20px;      /* Distanza dal lato destro della viewport */
+    font-size: 24px;  /* Dimensione dell'icona */
+    cursor: pointer;  /* Mostra un puntatore a mano quando l'utente passa sopra il bottone */
+    background: none; /* Nessuno sfondo per fare in modo che l'icona sia più pulita */
+    border: none;     /* Nessun bordo intorno al bottone */
+    color: #333333;   /* Colore dell'icona, cambialo a seconda delle tue necessità */
+    z-index: 1000;    /* Assicurati che il bottone sia sopra gli altri contenuti della pagina */
+    padding: 8px 12px; /* Padding intorno all'icona per migliorare la cliccabilità */
+    border-radius: 50%; /* Rende il bottone circolare */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3); /* Aggiunge un'ombra per migliorare la visibilità su sfondi vari */
+}
 
- #chatbot-container {
-    position: fixed;
-    bottom: 0;
-    right: 10px;
-    width: 300px;
-    height: 400px;
+#chatbot-container {
+    position: fixed;  /* Fissa il chatbot nella viewport */
+    bottom: 70px;     /* Alza il chatbot sopra il bottone, aggiusta questo valore in base alla dimensione del tuo bottone */
+    right: 10px;      /* Allinea il chatbot con il lato destro della viewport, come il bottone */
     border: 1px solid #ccc;
     background-color: #fff;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    transition: transform 0.3s ease-in-out;
-    transform: translateY(100%);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 1000;    /* Assicurati che sia sopra al bottone */
+    transition: transform 0.3s ease-in-out; /* Transizione elegante */
+    transform: translateY(0);  /* Assicurati che parta dalla posizione giusta */
+    display: none;   /* Nascondi il chatbot quando non è attivo */
+    border-radius: 2%; /* Rende il bottone circolare */
 }
 
-#chatbot-header {
-    background-color: #0073aa;
-    color: #fff;
-    padding: 10px;
-    cursor: pointer;
-}
-
-#chatbot-body {
-    height: 360px;
-    display: none;
-}
-
-#chatbot-toggle-btn {
-    float: right;
-    border: none;
-    background-color: transparent;
-    color: #fff;
-    font-size: 20px;
-    cursor: pointer;
-}
-
-.chatbot-open #chatbot-body {
-    display: block;
-}
-
-.chatbot-open #chatbot-container {
-    transform: translateY(0);
-}
-
-.chatbot-closed #chatbot-container {
-    transform: translateY(calc(100% - 40px)); /* Mostra solo l'header */
+#chatbot-container.chatbot-open {
+    display: block; /* Mostra il chatbot quando il bottone è premuto */
 }

@@ -1,0 +1,41 @@
+<?php return array(
+    'root' => array(
+        'name' => '__root__',
+        'pretty_version' => 'dev-master',
+        'version' => 'dev-master',
+        'reference' => '8173c5ac92ce54f55b9ae1e1fa52b9e66ab23d6e',
+        'type' => 'library',
+        'install_path' => __DIR__ . '/../../',
+        'aliases' => array(),
+        'dev' => true,
+    ),
+    'versions' => array(
+        '__root__' => array(
+            'pretty_version' => 'dev-master',
+            'version' => 'dev-master',
+            'reference' => '8173c5ac92ce54f55b9ae1e1fa52b9e66ab23d6e',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../../',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'justinrainbow/json-schema' => array(
+            'pretty_version' => 'v5.2.13',
+            'version' => '5.2.13.0',
+            'reference' => 'fbbe7e5d79f618997bc3332a6f49246036c45793',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../justinrainbow/json-schema',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'orhanerday/open-ai' => array(
+            'pretty_version' => '5.1',
+            'version' => '5.1.0.0',
+            'reference' => '386c7f65a50cbfb0fbdbebcd72f7e6c7a6039c84',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../orhanerday/open-ai',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+    ),
+);

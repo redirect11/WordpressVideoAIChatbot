@@ -27,6 +27,21 @@
 	 * single DOM-ready or window-load handler for a particular page.
 	 * Although scripts in the WordPress core, Plugins and Themes may be
 	 * practising this, we should strive to set a better example in our own work.
+	 * 
+	 * 
 	 */
+	jQuery(document).ready(function($) {         //wrapper
+		$('#delete-thread-button').on('click', function() {          //event
+			$.post(my_ajax_obj.ajax_url, 
+				{      //POST request
+				_ajax_nonce: my_ajax_obj.nonce, //nonce
+				action: 'openai_cancel_thread_options'        
+				}, 
+				function(response) {            //callback
+					jQuery('#delete-thread-button-result').html(response);
+				}
+			);
+		});
+	});
 
 })( jQuery );
