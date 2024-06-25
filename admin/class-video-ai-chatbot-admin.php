@@ -42,6 +42,7 @@ class Video_Ai_Chatbot_Admin {
 	 */
 	private $version;
 
+	private $wa;
 	/**
 	 * Initialize the class and set its properties.
 	 *
@@ -49,11 +50,12 @@ class Video_Ai_Chatbot_Admin {
 	 * @param      string    $plugin_name       The name of this plugin.
 	 * @param      string    $version    The version of this plugin.
 	 */
-	public function __construct( $plugin_name, $version, $openai ) {
+	public function __construct( $plugin_name, $version, $openai, $wa ) {
 
 		$this->plugin_name = $plugin_name;
 		$this->version = $version;
 		$this->openai = $openai;
+		$this->wa = $wa;
 	}
 
 	//defined('ABSPATH') or die('Accesso non consentito');
@@ -88,13 +90,36 @@ class Video_Ai_Chatbot_Admin {
 		include_once 'partials/video-ai-chatbot-admin-transcriptions.php';
 	}
 
+	public function before_section() {
+		return '<div class="chatbot-settings-section">
+					<div class="components-panel">
+						<div class="components-panel__body is-opened">';
+	}
+
+	public function after_section() {
+		return '		</div>
+					</div>
+					<br/>
+				</div>';
+	}
+
+	public function section_wrapper() {
+		$section_class = [ 
+			'before_section' => $this->before_section(),
+			'after_section' => $this->after_section(), 
+			'section_class' => 'chatbot-settings-section' 
+		];
+		return $section_class;
+	}
 	/**
 	 * Registra le azioni AJAX per la gestione dei dati del plugin.
 	 */
 	public function openai_assistant_settings_init() {
 		register_setting('video_ai_chatbot_group', 'video_ai_chatbot_options');
 		register_setting('video_ai_chatbot_group', 'openai_cancel_thread_options');
+		register_setting('video_ai_chatbot_group', 'openai_delete_files_data_options');
 
+		
 		$default = array(
 			array(
 				'id'    => '1',
@@ -105,7 +130,7 @@ class Video_Ai_Chatbot_Admin {
 			),
 		);
 
-		$schema  = array(
+		$transcriptionSchema  = array(
 					'type'  => 'array',
 					'items' => array(
 						'id'    => 'string',
@@ -124,7 +149,28 @@ class Video_Ai_Chatbot_Admin {
 				'type'         => 'array',
 				'default'      => $default,
 				'show_in_rest' => array(
-					'schema' => $schema,
+					'schema' => $transcriptionSchema,
+				),
+			)
+		);
+
+		$fileSchema  = array(
+			'type'  => 'array',
+			'items' => array(
+				'id'           => 'string',	
+				'file_name'    => 'string',
+				'file_content' => 'string',
+			),
+		);
+
+		register_setting(
+			'video_ai_chatbot_group',
+			'video_ai_chatbot_files',
+			array(
+				'type'         => 'array',
+				'default'      => $default,
+				'show_in_rest' => array(
+					'schema' => $fileSchema,
 				),
 			)
 		);
@@ -133,8 +179,19 @@ class Video_Ai_Chatbot_Admin {
 			'video_ai_chatbot_section',
 			__('Impostazioni del Chatbot', 'video-ai-chatbot'),
 			array($this,'video_ai_chatbot_section_callback'),
-			'chatbot-settings'
+			'chatbot-settings',
+			$this->section_wrapper('Impostazioni del Chatbot')
 		);
+
+		// Aggiungi il campo nome del chatbot	
+		add_settings_field(
+			'video_ai_chatbot_name_field',
+			__('Nome del Chatbot', 'video-ai-chatbot'),
+			array($this,'video_ai_chatbot_name_render'),
+			'chatbot-settings',
+			'video_ai_chatbot_section'
+		);
+	
 		add_settings_field(
 			'video_ai_enable_chatbot_field',
 			__('Abilita Chatbot', 'openai-assistant'),
@@ -149,12 +206,20 @@ class Video_Ai_Chatbot_Admin {
 			'chatbot-settings',
 			'video_ai_chatbot_section'
 		);
+		add_settings_field(
+			'video_ai_chatbot_theme',
+			__('Seleziona Tema', 'video-ai-chatbot'),
+			array($this, 'video_ai_chatbot_theme_render'),
+			'chatbot-settings',
+			'video_ai_chatbot_section'
+		);
 
 		add_settings_section(
 			'openai_api_settings_section',
 			'API Settings',
 			array($this, 'openai_settings_section_text'),
-			'chatbot-settings'
+			'chatbot-settings',
+			$this->section_wrapper('API Settings')
 		);
 	
 		add_settings_field(
@@ -165,28 +230,92 @@ class Video_Ai_Chatbot_Admin {
 			'openai_api_settings_section'
 		);
 
+		//add a section about whastapp	
 		add_settings_section(
-			'openai_cancel_thread_section',
-			__('Cancella Thread Corrente', 'video-ai-chatbot'),
-			array($this, 'openai_cancel_thread_section_callback'),
-			'chatbot-settings'
+			'openai_whatsapp_settings_section',
+			'WhatsApp Settings',
+			array($this, 'openai_whatsapp_settings_section_callback'),
+			'chatbot-settings',
+			$this->section_wrapper()
 		);
 
+		//Add a field for the whatsapp token
+		add_settings_field(
+			'openai_whatsapp_token_field',
+			'WhatsApp Token',
+			array($this, 'openai_whatsapp_token_field_render'),
+			'chatbot-settings',
+			'openai_whatsapp_settings_section'
+		);
+
+		//add a filed for whastapp outcoming number id
+		add_settings_field(
+			'openai_whatsapp_outcoming_number_id_field',
+			'WhatsApp Outcoming Number ID',
+			array($this, 'openai_whatsapp_outcoming_number_id_field_render'),
+			'chatbot-settings',
+			'openai_whatsapp_settings_section'
+		);
+
+		//add a filed to associate whastapp replies to an assistant
+		add_settings_field(
+			'openai_whatsapp_associate_assistant_field',
+			'Associate Assistant',
+			array($this, 'openai_whatsapp_associate_assistant_field_render'),
+			'chatbot-settings',
+			'openai_whatsapp_settings_section'
+		);
+
+		add_settings_section(
+			'openai_cancel_thread_section',
+			__('Cancella dati plugin', 'video-ai-chatbot'),
+			array($this, 'openai_delete_data_section_callback'),
+			'chatbot-settings',
+			$this->section_wrapper()
+		);
+
+		// add_settings_field(
+		// 	'video_ai_dummy_field',
+		// 	'Boh',
+		// 	array($this, 'video_ai_dummy_calback'),
+		// 	'chatbot-settings',
+		// 	'openai_cancel_thread_section',
+		// );
+
 	}
 
-	
-	public function openai_cancel_thread_section_callback() {
-		echo '<p>Clicca "Cancella Thread" per rimuovere il thread corrente associato al tuo account.</p>';
+	// public function video_ai_dummy_calback() {
+	// 	echo '<p>Click "Cancel Thread" to remove the current thread associated with your account.</p>';
+	// }
+	public function openai_delete_data_section_callback() {
+		echo '<h4>ATTENZIONE, QUESTE OPERAZIONI COMPORTANO LA PERDITA DEI DATI DEI FILE E DELLE TRASCRIZIONI SALVATE.</h4>';
 		?>
-		<div class="wrap">
-			<h2>Assistenti</h2>
+			<h3>Cancella il thread</h3>
+			<p>Cancella il thread corrente associato al tuo account.</p>
 			<button id="delete-thread-button" class="button button-primary" type="button">Cancella Thread Corrente</button>
 			<div id="delete-thread-button-result"></div>
-		</div>
+			<br />
+			<h3>Cancella i file e le trascrizioni</h3>
+			<p>Cancella i file degli assistenti preventivi e le trascrizioni. Non cancella gli assistenti. </p>
+			<p>ATTENZIONE: Questa operazione non può essere annullata.</p>
+			<button id="delete-filedata-button" class="button button-primary" type="button">Reset File e Trascrizioni</button>
+			<div id="delete-filedata-button-result"></div>
 		<?php
 	}
-	
 
+
+
+	//Implementa la callback per il campo nome del chatbot
+	public function video_ai_chatbot_name_render() {
+		$options = get_option('video_ai_chatbot_options');
+		$name = '';
+		if(isset($options['video_ai_chatbot_name_field'])) {
+			$name = $options['video_ai_chatbot_name_field'];
+		}
+		?>
+		<input type='text' name='video_ai_chatbot_options[video_ai_chatbot_name_field]' value='<?php echo $name; ?>'>
+		<?php
+	}
 
 	public function openai_settings_section_text() {
 		echo '<p>Enter your OpenAI API key below.</p>';
@@ -199,10 +328,69 @@ class Video_Ai_Chatbot_Admin {
 	
 	public function openai_api_key_field_render() {
 		$options = get_option('video_ai_chatbot_options');
+		$key = '';
+		if(isset($options['openai_api_key_field'])) {
+			$key = $options['openai_api_key_field'];
+		}
 		?>
-		<input type='text' name='video_ai_chatbot_options[openai_api_key_field]' value='<?php echo $options['openai_api_key_field']; ?>'>
+		<input type='text' name='video_ai_chatbot_options[openai_api_key_field]' value='<?php echo $key; ?>'>
 		<?php
 	}
+
+	//implements the three whastapp settings callbacks
+	public function openai_whatsapp_settings_section_callback() {
+		echo '<p>Enter your WhatsApp settings below.</p>';
+	}
+
+	//implements the whatsapp token field callback using a textarea
+	public function openai_whatsapp_token_field_render() {
+		$options = get_option('video_ai_chatbot_options');
+		$token = '';
+		if(isset($options['openai_whatsapp_token_field'])) {
+			$token = $options['openai_whatsapp_token_field'];
+		}
+		?>
+		<textarea name='video_ai_chatbot_options[openai_whatsapp_token_field]' rows='5' cols='50'><?php echo esc_textarea($token); ?></textarea>
+		<?php
+	}
+
+	//implements the whatsapp outcoming number id field callback
+	public function openai_whatsapp_outcoming_number_id_field_render() {
+		$options = get_option('video_ai_chatbot_options');
+		$number_id = '';
+		if(isset($options['openai_whatsapp_outcoming_number_id_field'])) {
+			$number_id = $options['openai_whatsapp_outcoming_number_id_field'];
+		}
+		?>
+		<input type='text' name='video_ai_chatbot_options[openai_whatsapp_outcoming_number_id_field]' value='<?php echo $number_id; ?>'>
+		<?php
+	}
+
+	//implements the whatsapp associate assistant field callback. Fetch assistants with thie openai client
+	public function openai_whatsapp_associate_assistant_field_render() {
+		$options = get_option('video_ai_chatbot_options');
+		$selected = $options['openai_whatsapp_associate_assistant_field'];
+		error_log('selected: ' . $selected);
+		$assistants = [];
+		$assistants = $this->openai->get_assistants();
+		if($assistants && isset($assistants['data'])) {
+			$assistants = $assistants['data'];
+		}	
+		error_log('assistants: ' . json_encode($assistants));
+		?>
+		<select name='video_ai_chatbot_options[openai_whatsapp_associate_assistant_field]'>
+		<?php
+		//iterate over each assistant and use the assistant_name for the name of the option
+		foreach($assistants as $assistant) {
+			?>
+			<option value='<?php echo $assistant['id']; ?>' <?php selected($selected, $assistant['id']); ?> ><?php echo $assistant['name']; ?></option>
+			<?php
+		}
+		?>
+		</select>
+		<?php
+	}
+	
 
 	
 	public function video_ai_enable_chatbot_render() {
@@ -215,8 +403,30 @@ class Video_Ai_Chatbot_Admin {
 	public function openai_welcome_message_render() {
 		$options = get_option('video_ai_chatbot_options');
 		?>
-				<h1>  <?php echo $options; ?> </h1>
 		<textarea name='video_ai_chatbot_options[video_ai_chatbot_welcome_message_field]' rows='5' cols='50'><?php echo esc_textarea($options['video_ai_chatbot_welcome_message_field'] ?? ''); ?></textarea>
+		<?php
+	}
+
+	public function video_ai_chatbot_theme_render() {
+		?>
+		<select name='video_ai_chatbot_options[video_ai_chatbot_theme]'>
+		<?php
+		$options = get_option('video_ai_chatbot_options');
+		$dirPath = plugin_dir_path(__FILE__) . '../public/css/themes';
+		$files = scandir($dirPath);
+		foreach ($files as $file) {
+			$filePath = $dirPath . '/' . $file;
+			if (is_file($filePath)) {
+				$filename = pathinfo($filePath, PATHINFO_FILENAME);
+				// render dropdown option
+				?>
+				<option value='<?php echo $filename; ?>' <?php selected($options['video_ai_chatbot_theme'], $filename); ?>><?php echo $filename; ?></option>
+				<?php
+				//echo $file . "<br>";
+			}
+		}
+		?>
+		</select>
 		<?php
 	}
 
@@ -263,33 +473,47 @@ class Video_Ai_Chatbot_Admin {
 		 * between the defined hooks and the functions defined in this
 		 * class.
 		 */
+		$nonce = wp_create_nonce( 'wp_rest' );
 		wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/video-ai-chatbot-admin.js', array( 'jquery' ), $this->version, false );
 		wp_localize_script(
 			$this->plugin_name,
 			'my_ajax_obj',
 			array(
 				'ajax_url' => admin_url( 'admin-ajax.php' ),
-				'nonce'    => wp_create_nonce( $this->plugin_name ),
+				'nonce'    => $nonce,
 			)
 		);
-		$api_key = get_option('video_ai_chatbot_options')['video_ai_chatbot_welcome_message_field'];
-		if (!$api_key) {
-			echo '<p>Please configure your OpenAI API key in the settings.</p>';
-			return;
-		}
+		$options = get_option('video_ai_chatbot_options');
+		$api_key = isset($options['openai_api_key_field']) ? $options['openai_api_key_field'] :'';
+		$wa_apy_key = isset($options['openai_whatsapp_token_field']) ? $options['openai_whatsapp_token_field'] :'';
+		$wa_phone_id = isset($options['openai_whatsapp_outcoming_number_id_field']) ? $options['openai_whatsapp_outcoming_number_id_field'] :'';
+		$wa_assistant_id = isset($options['openai_whatsapp_associate_assistant_field']) ? $options['openai_whatsapp_associate_assistant_field'] :'';
+		// if (!$api_key) {
+		// 	echo '<p>Please configure your OpenAI API key in the settings.</p>';
+		// 	return;
+		// }
+
+		// if(!$wa_apy_key || !$wa_phone_id || !$wa_assistant_id) {
+		// 	echo '<p>Please configure your WhatsApp settings in the settings.</p>';
+		// 	return;
+		// }
 
 		wp_enqueue_script('openai-assistant-admin-react', plugins_url('../assets/js/assistantsPage.bundle.js', __FILE__), array(), '1.0', true);
 		wp_enqueue_script('openai-create-assistant-admin-react', plugins_url('../assets/js/transcriptionsPage.bundle.js', __FILE__), array(), '1.0', true);
-
+		wp_enqueue_script('openai-assistant-settings-react', plugins_url('../assets/js/settingsPage.bundle.js', __FILE__), array(), '1.0', true);
+		
 		if(!$this->openai->is_active()) {
-			echo '<p>OpenAI client not initialized</p>';
 			$this->openai->activate($api_key);
 		}
-		wp_localize_script('openai-assistant-js', 'openaiAjax', array('ajaxurl' => admin_url('admin-ajax.php')));
-		$assistants = $this->openai->get_assistants();
+
+		if(!$this->wa->is_active()) {
+			$this->wa->activate($wa_apy_key, $wa_phone_id, $wa_assistant_id);
+		}
+		$assistants = $this->openai->get_assistants_request();
 		$transcriptions = $this->get_local_transcriptions();
-		wp_localize_script('openai-assistant-admin-react', 'adminData', array('assistants' => $assistants, 'transcriptions' => $transcriptions));
-		
+		wp_localize_script('openai-assistant-admin-react', 'adminData', array('assistants' => $assistants, 'transcriptions' => $transcriptions, 'nonce' => $nonce));
+		wp_localize_script('openai-create-assistant-admin-react', 'adminData', array('assistants' => $assistants, 'transcriptions' => $transcriptions, 'nonce' => $nonce));
+		wp_localize_script('openai-assistant-settings-react', 'adminData', array('assistants' => $assistants, 'transcriptions' => $transcriptions, 'nonce' => $nonce));
 	}
 
 	private function get_local_transcriptions() {
@@ -302,7 +526,12 @@ class Video_Ai_Chatbot_Admin {
 	 */
 	function delete_thread() {
 		//check_ajax_referer( $this->plugin_name );
-		$this->openai->handle_thread_deletion();
+		return $this->openai->handle_thread_deletion();
+	}
+
+	function delete_file_data() {
+		error_log("delete_file_data");
+		return $this->openai->delete_local_files_data();
 	}
 
 }

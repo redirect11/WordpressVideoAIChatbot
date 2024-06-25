@@ -2,8 +2,11 @@
  * All of the CSS for your admin-specific functionality should be
  * included in this file.
  */
+body {
+    display: none;
+}
 
- .assistants-container {
+.assistants-container {
     max-width: 600px;
     margin: auto;
     text-align: center;

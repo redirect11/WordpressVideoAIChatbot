@@ -1,6 +1,15 @@
 {
     "require": {
-        "orhanerday/open-ai": "5.1",
-        "justinrainbow/json-schema": "^5.2"
+        "orhanerday/open-ai": "^5.2",
+        "justinrainbow/json-schema": "^5.2",
+        "openai-php/client":"^0.10.1",
+        "guzzlehttp/guzzle": "^7.8",
+        "htmlburger/carbon-fields-plugin": "^3.6"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true,
+            "composer/installers": true
+        }
     }
 }

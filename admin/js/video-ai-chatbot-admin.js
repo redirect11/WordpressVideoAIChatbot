@@ -42,6 +42,33 @@
 				}
 			);
 		});
+
+		$('#delete-filedata-button').on('click', function() {          //event
+			$.post(my_ajax_obj.ajax_url, 
+				{      //POST request
+				_ajax_nonce: my_ajax_obj.nonce, //nonce
+				action: 'openai_delete_files_data_options'        
+				}, 
+				function(response) {            //callback
+					jQuery('#delete-filedata-button-result').html(response);
+				}
+			);
+		});
+
+		// $('#delete-unised-vector-stores').on('click', function() {          //event
+		// 	$.post(my_ajax_obj.ajax_url, 
+		// 		{      //POST request
+		// 		_ajax_nonce: my_ajax_obj.nonce, //nonce
+		// 		action: 'openai_delete_files_data_options'        
+		// 		}, 
+		// 		function(response) {            //callback
+		// 			jQuery('#delete-filedata-button-result').html(response);
+		// 		}
+		// 	);
+		// });
+
+
+		$('body').show();
 	});
 
 })( jQuery );

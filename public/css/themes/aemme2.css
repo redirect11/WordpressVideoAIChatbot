@@ -1,0 +1,99 @@
+.chatbot-custom-theme .react-chatbot-kit-chat-container {
+    position: relative;
+    width: 350px;
+  }
+
+.chatbot-custom-theme .react-chatbot-kit-chat-inner-container {}
+.chatbot-custom-theme .react-chatbot-kit-chat-header {}
+.chatbot-custom-theme .react-chatbot-kit-chat-input-container {}
+.chatbot-custom-theme .react-chatbot-kit-chat-message-container {}
+.chatbot-custom-theme .react-chatbot-kit-chat-input {}
+.chatbot-custom-theme .react-chatbot-kit-chat-input-form {}
+.chatbot-custom-theme .react-chatbot-kit-chat-input::placeholder {}
+.chatbot-custom-theme .react-chatbot-kit-chat-btn-send {}
+.chatbot-custom-theme .react-chatbot-kit-chat-btn-send-icon {}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-message-container {}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-avatar-container {
+    background-color: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%);
+}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-avatar-icon {
+    background-color: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%);
+}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-avatar-letter {}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-message {
+    background-image: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%);
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    color: rgb(39, 32, 32);
+    font-weight: medium;
+    position: relative;
+    width: 184.5px;
+    margin-left: 0%;
+    text-align: left;
+}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-message-arrow {}
+.chatbot-custom-theme .react-chatbot-kit-chat-bot-loading-icon-container {}
+.chatbot-custom-theme .chatbot-loader-container {}
+.chatbot-custom-theme #chatbot-loader #chatbot-loader-dot1 {}
+.chatbot-custom-theme #chatbot-loader #chatbot-loader-dot2 {}
+.chatbot-custom-theme #chatbot-loader #chatbot-loader-dot3 {}
+.chatbot-custom-theme .react-chatbot-kit-error {}
+.chatbot-custom-theme .react-chatbot-kit-error-container {}
+.chatbot-custom-theme .react-chatbot-kit-error-header {}
+.chatbot-custom-theme .react-chatbot-kit-error-docs {}
+
+#openai-chatbot .chatbot-toggle-button {
+	position: fixed;
+	bottom: 20px;
+	right: 20px;
+	font-size: 24px;
+	cursor: pointer;
+	/* background: none; */
+	/* border: none; */
+	color: #333333;
+	z-index: 1000;
+	padding: 8px 12px;
+	border-radius: 50%;
+	box-shadow: 0 2px 6px rgba(255, 255, 255, 0.68);
+	background-image: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%);
+	border-color: #a252525e;
+	/* border-block-width: medium; */
+}
+
+#chatbot-container {
+    position: fixed;  /* Fissa il chatbot nella viewport */
+    bottom: 70px;     /* Alza il chatbot sopra il bottone, aggiusta questo valore in base alla dimensione del tuo bottone */
+    right: 10px;      /* Allinea il chatbot con il lato destro della viewport, come il bottone */
+    border: 1px solid #ccc;
+    background-color: #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    z-index: 900;    /* Assicurati che sia sopra al bottone */
+    transition: transform 0.3s ease-in-out; /* Transizione elegante */
+    transform: translateY(0);  /* Assicurati che parta dalla posizione giusta */
+    display: none;   /* Nascondi il chatbot quando non è attivo */
+    border-radius: 2%; /* Rende il bottone circolare */
+}
+
+#chatbot-container.chatbot-open {
+    display: block; /* Mostra il chatbot quando il bottone è premuto */
+}
+
+.react-chatbot-kit-chat-bot-custom-message-container {
+  display: flex;
+  margin: 15px 0;
+  justify-content: flex-start;
+}
+
+.react-chatbot-kit-chat-bot-custom-message {
+   background-image: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%);
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  color: #161515;
+  font-weight: medium;
+  position: relative;
+  width: unset;
+  margin-left: 0%;
+  text-align: left;
+}

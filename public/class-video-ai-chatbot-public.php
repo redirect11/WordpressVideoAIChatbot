@@ -95,12 +95,11 @@ class Video_Ai_Chatbot_Public {
 		 * class.
 		 */
 
-		wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/video-ai-chatbot-public.css', array(), $this->version, 'all' );
-
 		$options = get_option('video_ai_chatbot_options');
-		if (!empty($options['video_ai_enable_chatbot_field'])) {
-			wp_enqueue_style('openai-assistant-style', plugins_url('css/chatbot.css', __FILE__));
+		if(!empty($options['video_ai_chatbot_theme'])) {
+			wp_enqueue_style('openai-assistant-theme', plugins_url('css/themes/' . $options['video_ai_chatbot_theme'] . '.css', __FILE__));
 		}
+
 	}
 
 	/**
@@ -139,9 +138,11 @@ class Video_Ai_Chatbot_Public {
 			if (empty($welcome_message)) {
 				$welcome_message = 'Hello! How can I help you today?';
 			}
-			$assistants = $this->openai->get_assistants();
-			wp_localize_script('openai-assistant-react', 'ChatbotData', array('assistants' => $assistants, 'welcomeMessage' => $welcome_message));
-	
+			$assistants = $this->openai->get_assistants_request();
+			$chatbot_name = get_option('video_ai_chatbot_options')['video_ai_chatbot_name_field'];
+			wp_localize_script('openai-assistant-react', 'ChatbotData', array('assistants' => $assistants, 
+			'welcomeMessage' => $welcome_message, 'chatbotName' => $chatbot_name,
+			'icon' => plugins_url('svg/chatbot-icon.svg', __FILE__)));
 		}
 
 	}
