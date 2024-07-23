@@ -36,7 +36,6 @@ class Video_Ai_Community_OpenAi {
     public function activate($apiKey)
     {
         if(!$this->is_active() && $apiKey) {
-            error_log('Activating community ai client');
             $this->client = OpenAI::factory()
                 ->withApiKey($apiKey)
                 ->withHttpClient($client = new \GuzzleHttp\Client([])) // default: HTTP client found using PSR-18 HTTP Client Discovery
@@ -117,9 +116,13 @@ class Video_Ai_Community_OpenAi {
     public function deleteVectorStore($vectorStoreId)
     {
         if($this->is_active()) {
-            $response = $this->client->vectorStores()->delete(
-                vectorStoreId: $vectorStoreId,
-            );
+            try {
+                $response = $this->client->vectorStores()->delete(
+                    vectorStoreId: $vectorStoreId,
+                );
+            } catch (Exception $e) {
+                return $vectorStoreId;
+            }
 
             if (isset($response->id) && isset($response->deleted) && $response->deleted == true) {
                 return $response->id;
@@ -154,21 +157,29 @@ class Video_Ai_Community_OpenAi {
         } 
     }
 
-    public function retrieveVectorStoreFiles($vectorStoreId)
+    public function retrieveVectorStoreFiles($vectorStoreId, $after = null, $before = null)
     {
-        error_log('retrieveVectorStoreFiles: ' . $vectorStoreId);
         if($this->is_active()) {
-            error_log('requesting data: ' . $vectorStoreId);
+            //$responseData = 
+            $parameters = [
+                'limit' => 100,
+            ];
+            if($before) {
+                $parameters['before'] = $before;
+            }
+            if($after) {
+                $parameters['after'] = $after;
+            }
+            
             $response = $this->client->vectorStores()->files()->list(
                 vectorStoreId: $vectorStoreId,
-                parameters: [
-                    'limit' => 10,
-                ],
+                parameters: $parameters,
             );
+
             error_log('response: ' . json_encode($response));
             if(isset($response) && isset($response->data)) {
                 $arrayResponse= $response->toArray();
-                return $arrayResponse['data'];
+                return $arrayResponse;
             } else {
                 throw new Exception('Failed to retrieve vector store files: '. json_encode($response));
             }
@@ -189,6 +200,46 @@ class Video_Ai_Community_OpenAi {
                 throw new Exception('Failed to retrieve vector store: '. json_encode($response));
             }
 
+        } else {
+            throw new Exception('Community ai client not active');
+        }
+    }
+
+    public function submit_function_call_output($runId, $threadId, $output) {
+        if($this->is_active()) {
+            try{
+
+                $parameters = [
+                    'tool_outputs' => $output,
+                ];
+
+                error_log('submit_function_call_output: ' . $runId . ' ' . $threadId . ' ' . json_encode($output) . ' ' . json_encode($parameters));
+
+                $response = $this->client->threads()->runs()->submitToolOutputs(
+                    threadId: $threadId,
+                    runId: $runId,
+                    parameters: [
+                        'tool_outputs' => $output,
+                    ]
+                );
+
+                if (isset($response->id)) {
+                    return $response->toArray();
+                } else {
+                    $response = $this->client->threads()->runs()->cancel(
+                        threadId: $threadId,
+                        runId: $runId,
+                    );
+                    throw new Exception('Failed to submit function call output. Canceling run: '. json_encode($response));
+                }
+            } catch (Exception $e) {
+                error_log('error: ' . json_encode($e));
+                $response = $this->client->threads()->runs()->cancel(
+                    threadId: $threadId,
+                    runId: $runId,
+                );
+                throw new Exception('Failed to submit function call output. Canceling run: '. json_encode($e) . 'Run: ' . json_encode($response));
+            }
         } else {
             throw new Exception('Community ai client not active');
         }

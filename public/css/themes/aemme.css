@@ -226,3 +226,8 @@
     font-family: 'Roboto', sans-serif;
 }
 
+.react-chatbot-kit-chat-bot-custom-message a {
+    color: var(--highlight-color);
+    text-decoration: underline;
+}
+

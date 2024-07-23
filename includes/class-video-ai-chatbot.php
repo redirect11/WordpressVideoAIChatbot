@@ -134,6 +134,8 @@ class Video_Ai_Chatbot {
 
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-wa-webhooks.php';
 
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-tutor-utils.php';
+
 		$this->loader = new Video_Ai_Chatbot_Loader();
 		$this->communityopenai = new Video_Ai_Community_OpenAi();
 		$this->openai = new Video_Ai_OpenAi($this->communityopenai);

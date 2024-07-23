@@ -139,10 +139,24 @@ class Video_Ai_Chatbot_Public {
 				$welcome_message = 'Hello! How can I help you today?';
 			}
 			$assistants = $this->openai->get_assistants_request();
+			$messages = $this->openai->get_thread_messages_request();
 			$chatbot_name = get_option('video_ai_chatbot_options')['video_ai_chatbot_name_field'];
-			wp_localize_script('openai-assistant-react', 'ChatbotData', array('assistants' => $assistants, 
-			'welcomeMessage' => $welcome_message, 'chatbotName' => $chatbot_name,
-			'icon' => plugins_url('svg/chatbot-icon.svg', __FILE__)));
+			$user_id = apply_filters('determine_current_user', true);
+			$user_display_name = '';
+            if($user_id != 0) {
+                $user_display_name = get_userdata($user_id)->display_name;
+            }
+			wp_localize_script('openai-assistant-react', 
+							   'ChatbotData', 
+							   array(
+								'assistants' => $assistants, 
+								'welcomeMessage' => $welcome_message, 
+								'chatbotName' => $chatbot_name,
+								'icon' => plugins_url('svg/chatbot-icon.svg', __FILE__),
+								'messages' => $messages,
+								'userDisplayName' => $user_display_name,
+							   )
+							);
 		}
 
 	}

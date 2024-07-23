@@ -39,5 +39,4 @@
         submit_button(); // Stampa il pulsante di invio per il form.
         ?>
     </form>
-    <div id="react-settings-page"></div>
 </div>

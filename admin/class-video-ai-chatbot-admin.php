@@ -65,8 +65,6 @@ class Video_Ai_Chatbot_Admin {
 	 */
 	public function openai_assistant_admin_menu() {
 		add_menu_page('Chatbot Settings', 'Chatbot Settings', 'manage_options', 'chatbot-settings', array($this,'openai_assistant_main_page'), 'dashicons-admin-generic', 20);
-		add_submenu_page('chatbot-settings', 'Gestione Assistenti', 'Assistenti', 'manage_options', 'openai-assistants', array($this,'openai_assistants_page'));
-		add_submenu_page('chatbot-settings', 'Gestione Trascrizioni', 'Trascrizioni', 'manage_options', 'openai-transcriptions', array($this,'openai_transcriptions_page'));
 	}
 
 	/**
@@ -74,20 +72,6 @@ class Video_Ai_Chatbot_Admin {
 	 */
 	public function openai_assistant_main_page() {
 		include_once 'partials/video-ai-chatbot-admin-display.php';
-	}
-
-	/**
-	 * Pagina per la gestione degli assistenti.
-	 */
-	public function openai_assistants_page() {
-		include_once 'partials/video-ai-chatbot-admin-assistants.php';
-	}
-
-	/**
-	 * Pagina per la gestione dei video e delle trascrizioni.
-	 */
-	public function openai_transcriptions_page() {
-		include_once 'partials/video-ai-chatbot-admin-transcriptions.php';
 	}
 
 	public function before_section() {
@@ -214,57 +198,57 @@ class Video_Ai_Chatbot_Admin {
 			'video_ai_chatbot_section'
 		);
 
-		add_settings_section(
-			'openai_api_settings_section',
-			'API Settings',
-			array($this, 'openai_settings_section_text'),
-			'chatbot-settings',
-			$this->section_wrapper('API Settings')
-		);
+		// add_settings_section(
+		// 	'openai_api_settings_section',
+		// 	'API Settings',
+		// 	array($this, 'openai_settings_section_text'),
+		// 	'chatbot-settings',
+		// 	$this->section_wrapper('API Settings')
+		// );
 	
-		add_settings_field(
-			'openai_api_key_field',
-			'OpenAI API Key',
-			array($this, 'openai_api_key_field_render'),
-			'chatbot-settings',
-			'openai_api_settings_section'
-		);
+		// add_settings_field(
+		// 	'openai_api_key_field',
+		// 	'OpenAI API Key',
+		// 	array($this, 'openai_api_key_field_render'),
+		// 	'chatbot-settings',
+		// 	'openai_api_settings_section'
+		// );
 
-		//add a section about whastapp	
-		add_settings_section(
-			'openai_whatsapp_settings_section',
-			'WhatsApp Settings',
-			array($this, 'openai_whatsapp_settings_section_callback'),
-			'chatbot-settings',
-			$this->section_wrapper()
-		);
+		// //add a section about whastapp	
+		// add_settings_section(
+		// 	'openai_whatsapp_settings_section',
+		// 	'WhatsApp Settings',
+		// 	array($this, 'openai_whatsapp_settings_section_callback'),
+		// 	'chatbot-settings',
+		// 	$this->section_wrapper()
+		// );
 
-		//Add a field for the whatsapp token
-		add_settings_field(
-			'openai_whatsapp_token_field',
-			'WhatsApp Token',
-			array($this, 'openai_whatsapp_token_field_render'),
-			'chatbot-settings',
-			'openai_whatsapp_settings_section'
-		);
+		// //Add a field for the whatsapp token
+		// add_settings_field(
+		// 	'openai_whatsapp_token_field',
+		// 	'WhatsApp Token',
+		// 	array($this, 'openai_whatsapp_token_field_render'),
+		// 	'chatbot-settings',
+		// 	'openai_whatsapp_settings_section'
+		// );
 
-		//add a filed for whastapp outcoming number id
-		add_settings_field(
-			'openai_whatsapp_outcoming_number_id_field',
-			'WhatsApp Outcoming Number ID',
-			array($this, 'openai_whatsapp_outcoming_number_id_field_render'),
-			'chatbot-settings',
-			'openai_whatsapp_settings_section'
-		);
+		// //add a filed for whastapp outcoming number id
+		// add_settings_field(
+		// 	'openai_whatsapp_outcoming_number_id_field',
+		// 	'WhatsApp Outcoming Number ID',
+		// 	array($this, 'openai_whatsapp_outcoming_number_id_field_render'),
+		// 	'chatbot-settings',
+		// 	'openai_whatsapp_settings_section'
+		// );
 
-		//add a filed to associate whastapp replies to an assistant
-		add_settings_field(
-			'openai_whatsapp_associate_assistant_field',
-			'Associate Assistant',
-			array($this, 'openai_whatsapp_associate_assistant_field_render'),
-			'chatbot-settings',
-			'openai_whatsapp_settings_section'
-		);
+		// //add a filed to associate whastapp replies to an assistant
+		// add_settings_field(
+		// 	'openai_whatsapp_associate_assistant_field',
+		// 	'Associate Assistant',
+		// 	array($this, 'openai_whatsapp_associate_assistant_field_render'),
+		// 	'chatbot-settings',
+		// 	'openai_whatsapp_settings_section'
+		// );
 
 		add_settings_section(
 			'openai_cancel_thread_section',
@@ -372,23 +356,28 @@ class Video_Ai_Chatbot_Admin {
 		$selected = $options['openai_whatsapp_associate_assistant_field'];
 		error_log('selected: ' . $selected);
 		$assistants = [];
-		$assistants = $this->openai->get_assistants();
-		if($assistants && isset($assistants['data'])) {
-			$assistants = $assistants['data'];
-		}	
-		error_log('assistants: ' . json_encode($assistants));
-		?>
-		<select name='video_ai_chatbot_options[openai_whatsapp_associate_assistant_field]'>
-		<?php
-		//iterate over each assistant and use the assistant_name for the name of the option
-		foreach($assistants as $assistant) {
+		try {
+			$assistants = $this->openai->get_assistants();
+			if($assistants && isset($assistants['data'])) {
+				$assistants = $assistants['data'];
+			}	
+			
+			error_log('assistants: ' . json_encode($assistants));
 			?>
-			<option value='<?php echo $assistant['id']; ?>' <?php selected($selected, $assistant['id']); ?> ><?php echo $assistant['name']; ?></option>
+			<select name='video_ai_chatbot_options[openai_whatsapp_associate_assistant_field]'>
 			<?php
+			//iterate over each assistant and use the assistant_name for the name of the option
+			foreach($assistants as $assistant) {
+				?>
+				<option value='<?php echo $assistant['id']; ?>' <?php selected($selected, $assistant['id']); ?> ><?php echo $assistant['name']; ?></option>
+				<?php
+			}
+			?>
+			</select>
+			<?php
+		} catch(Exception $e) {
+			?> <p> Error: <?php echo $e->getMessage(); ?> </p> <?php
 		}
-		?>
-		</select>
-		<?php
 	}
 	
 
