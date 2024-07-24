@@ -20,8 +20,11 @@ class Video_Ai_Chatbot_Wa_Webhooks {
         $options = get_option("video_ai_chatbot_options");
         if($options) {
             $token = isset($options['openai_whatsapp_token_field']) ? $options['openai_whatsapp_token_field'] :'';
-            $phone_id = isset($options['openai_whatsapp_phone_id_field']) ? $options['openai_whatsapp_phone_id_field'] :'';
+            $phone_id = isset($options['openai_whatsapp_outcoming_number_id_field']) ? $options['openai_whatsapp_outcoming_number_id_field'] :'';
             $assistantId = isset($options['openai_whatsapp_associate_assistant_field']) ? $options['openai_whatsapp_associate_assistant_field'] :'';
+            error_log("Video_Ai_Chatbot_Wa_Webhooks assistantId: " . $assistantId);
+            error_log("Video_Ai_Chatbot_Wa_Webhooks phone_id: " . $phone_id);
+            error_log("Video_Ai_Chatbot_Wa_Webhooks token: " . $token);
             if($token && $phone_id && $assistantId) {
                 $this->activate($token, $phone_id, $assistantId);
             }
@@ -34,6 +37,10 @@ class Video_Ai_Chatbot_Wa_Webhooks {
 
     public function activate($token, $phone_id, $assistantId)
     {
+        error_log("is_active: " . $this->is_active());
+        error_log("token: " . $token);
+        error_log("phone_id: " . $phone_id);
+        error_log("assistantId: " . $assistantId);
         if(!$this->is_active() && $token && $phone_id && $assistantId) {
             error_log('Activating wa webhooks');
             $this->token = $token;
@@ -71,12 +78,14 @@ class Video_Ai_Chatbot_Wa_Webhooks {
 
         // Verifica che il JSON contenga i campi necessari
         if (isset($data['entry'][0]['changes'][0]['value']['contacts'][0]['wa_id']) && isset($data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body'])) {
+            error_log("Data is valid");
             $phoneNumber = $data['entry'][0]['changes'][0]['value']['contacts'][0]['wa_id'];
             $messageText = $data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body'];
             $assistantId = $this->assistantId; // Sostituisci con l'ID dell'assistente desiderato
         
             // Chiama la funzione handle_wa_chatbot_request
             $response = $this->openai->handle_wa_chatbot_request($messageText, $assistantId, $phoneNumber);
+            error_log("response: " . json_encode($response, JSON_PRETTY_PRINT));
             if($response['error']) 
             {
                 return new WP_REST_Response(['message' => 'Invalid request data'], 400);
@@ -100,10 +109,16 @@ class Video_Ai_Chatbot_Wa_Webhooks {
         return new WP_REST_Response(['message' => 'Thank you for the message'], 200);
     }
 
+    private function removeCitations($text) {
+        // Utilizza una regex per trovare e rimuovere le sottostringhe nel formato 【numero:numero†testo】
+        $pattern = '/【\d+:\d+†[^】]+】/';
+        return preg_replace($pattern, '', $text);
+    }
+
     private function send_whatsapp_message($phone_number, $body_text, $enable_link_preview) {
-        $url = "https://graph.facebook.com/v19.0/" . $phone_id ."/messages";
+        $url = "https://graph.facebook.com/v19.0/" . $this->phone_id ."/messages";
         $headers = [
-            "Authorization: Bearer ". $this->access_token,
+            "Authorization: Bearer ". $this->token,
             "Content-Type: application/json"
         ];
     
@@ -114,7 +129,7 @@ class Video_Ai_Chatbot_Wa_Webhooks {
             "type" => "text",
             "text" => [
                 "preview_url" => $enable_link_preview,
-                "body" => $body_text
+                "body" => $this->removeCitations($body_text)
             ]
         ];
     
