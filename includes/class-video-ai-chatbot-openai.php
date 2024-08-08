@@ -1,18 +1,14 @@
 <?php
 
-use Orhanerday\OpenAi\OpenAi;
-use GuzzleHttp\Client;
-use SimpleJWTLogin\Modules\UserProperties;
-//use TutorUtils;
 
-        
-use WP_REST_Request;
+use Orhanerday\OpenAi\OpenAi;
+
 
 class Video_Ai_OpenAi {
     private $client;
     private $communityopenai;
     private $tutorUtils;
-
+    private $wa = [];
 
     /**
 	 * Initialize the class and set its properties.
@@ -23,14 +19,23 @@ class Video_Ai_OpenAi {
 	 */
 	public function __construct($communityopenai) {
         $options = get_option('video_ai_chatbot_options');
+       
+
+        //inizializzare tutte le options utilizzate in questa classe
         if($options) {
             $api_key = isset($options['openai_api_key_field']) ? $options['openai_api_key_field'] :'';
             if ($api_key) {
                 $this->activate($api_key);
             }
+            $this->communityopenai = $communityopenai;
+            $this->tutorUtils = new TutorUtils();
+            $waAssistants = get_option('video_ai_whatsapp_assistants', array());
+            if(isset($waAssistants) && count($waAssistants) > 0) {
+                foreach($waAssistants as $assistant) {
+                    $this->wa[$assistant['assistant']] = new Video_Ai_Chatbot_Wa_Webhooks($this, $assistant['token'], $assistant['outgoingNumberId'], $assistant['assistant']);
+                }
+            }
         }
-        $this->communityopenai = $communityopenai;
-        $this->tutorUtils = new TutorUtils();
 	}
 
     public function is_active() {
@@ -38,10 +43,8 @@ class Video_Ai_OpenAi {
     }
 
     public function permission_callback ( WP_REST_Request $request ) {
-        error_log('permission_callback');
-        error_log($request->get_header('X-WP-Nonce'));
+
         if(! is_user_logged_in()) {
-            error_log('User not logged in');
              return false;
         }
         // if(!current_user_can('edit_pages')) { 
@@ -50,7 +53,6 @@ class Video_Ai_OpenAi {
         // }
         if(wp_verify_nonce($request->get_header('X-WP-Nonce'),'wp_rest') === false ) {
             if($request->get_header('Authorization')) {
-                error_log('Auth token:' . $request->get_header('Authorization'));
                 return true;
                 // $token = explode(' ', $request->get_header('Authorization'));
                 // $token = $token[1];
@@ -229,46 +231,273 @@ class Video_Ai_OpenAi {
             'callback' => [$this, 'cancel_all_runs'],
             'permission_callback' => [$this, 'permission_callback']
         ]);
+
+        //registra un'api per ottenere tutti i messaggi di tutti i thread
+        register_rest_route('video-ai-chatbot/v1', '/get-all-thread-messages/', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_all_thread_messages_request'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
+        //registra un hook per ottenere tutti i messaggi di un thread
+        register_rest_route('video-ai-chatbot/v1', '/get-thread-messages/(?P<thread_id>[a-zA-Z0-9_-]+)', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_thread_messages_request'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
+        //register delete_all_threads route
+        register_rest_route('video-ai-chatbot/v1', '/delete-all-threads', [
+            'methods' => 'GET',
+            'callback' => [$this, 'delete_all_threads'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
+        //registra una route per cancel_all_users_runs
+        register_rest_route('video-ai-chatbot/v1', '/cancel-all-users-runs', [
+            'methods' => 'GET',
+            'callback' => [$this, 'cancel_all_users_runs'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
+        //registra un hoock per settare i numeri di nofitica per l'hadover
+        register_rest_route('video-ai-chatbot/v1', '/set-handover-notification-numbers', [
+            'methods' => 'POST',
+            'callback' => [$this, 'set_handover_notification_numbers'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
+        //registra un hoock per ottenere i numeri di notifica per l'handover
+        register_rest_route('video-ai-chatbot/v1', '/get-handover-notification-numbers', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_handover_notification_numbers'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
     }
 
+    public function get_handover_notification_numbers(WP_REST_Request $request) {
+        $options = get_option('video_ai_chatbot_notification_numbers',[]);
+        return new WP_REST_Response($options, 200);
+    }
 
-    // Implementa la funzione get_thread_request per l'endpoint get-thread 
-    public function get_thread_messages_request() {
-        // Ottieni l'ID dell'utente corrente
+    //implementa la funzione set_handover_notification_numbers
+    public function set_handover_notification_numbers(WP_REST_Request $request) {
+        $params = $request->get_body_params();
+        error_log('set_handover_notification_numbers params: ' . json_encode($params));
+        $options = $params['video_ai_chatbot_notification_numbers'] ? json_decode($params['video_ai_chatbot_notification_numbers'], true) : [];
+        update_option('video_ai_chatbot_notification_numbers', $options);
+        return new WP_REST_Response(['message' => 'Handover notification numbers updated successfully'], 200);
+    }
+
+    //Una funzione che verifica se un thread è un thread di whatsapp. Accedi ai metadati del tred per vedere se il campo 'wa' esiste. Richiedi i trhread a openai
+    public function is_whatsapp_thread($thread_id) {
+        $thread = $this->client->retrieveThread($thread_id);
+        $thread = json_decode($thread, true);
+        if(isset($thread['metadata']['wa'])) {
+            error_log('is_whatsapp_thread thread is whatsapp');
+            return true;
+        }
+        return false;
+    }
+    
+
+    // Implementa la funzione get_all_thread_messages_request per l'endpoint get-all-thread-messages
+    public function get_all_thread_messages_request() {
+        $messages = $this->get_all_thread_messages();
+        
+        // Se non esiste un thread per l'utente corrente restituisci un errore
+        // if (!$messages) {
+        //     return new WP_REST_Response(['success'=> false, 'message' => 'Thread not found'], 404);
+        // }
+        // Restituisci il thread dell'utente corrente
+        return new WP_REST_Response($messages, 200);
+    }
+
+    private function get_assistant_name_from_assistant_id($assistantId) {
+        $assistants = $this->get_assistants();
+        foreach($assistants as $assistant) {
+            if($assistant['id'] === $assistantId) {
+                return $assistant['name'];
+            }
+        }
+        return null;
+    }
+
+    //implementa la funzione get_all_thread_messages
+    public function get_all_thread_messages() {
+        // Cicla tutti gli utenti per ottenere i thread degli utenti
+        $users = get_users();
+        $allThreads = [];
+    
+        // foreach ($users as $user) {
+        //     $user_id = $user->ID;
+        //     $user_name = $user->display_name;
+        //     $threadIds = get_user_meta($user_id, 'openai_thread_id', true);
+    
+        //     if (!isset($threadIds) || !$threadIds) {
+        //         continue;
+        //     }
+    
+        //     $threadIds = json_decode($threadIds, true);
+        //     foreach ($threadIds as $assistantId => $threadId) {
+        //         $allThreads[] = [
+        //             'thread_id' => $threadId,
+        //             'assistantName' => $assistantId,
+        //             'user_id' => $user_id,
+        //             'userName' => $user_name,
+        //             'messages' => []
+        //         ];
+        //     }
+        // }
+    
+        // Ottieni i thread delle sessioni
+        $waAssistants = get_option('video_ai_whatsapp_assistants', []);
+
+        $sessionsThreads = get_option('video_ai_chatbot_threads', []);
+        if (isset($sessionsThreads)) {
+            foreach ($sessionsThreads as $sessionId => $session) {
+                foreach ($session as $assistantId => $threadId) {
+                    $assistant = array_filter($waAssistants, function($assistant) use ($assistantId) {
+                        return $assistant['assistant'] === $assistantId;
+                    });
+                    
+                    $thread = $this->client->retrieveThread($threadId);
+                    $thread = json_decode($thread, true);
+                    $is_wa_thread = isset($thread['metadata']['wa']);
+                    $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
+                    if($is_wa_thread) {
+                        $allThreads[] = [
+                            'thread_id' => $threadId,
+                            'assistantName' => $assistantId,
+                            'user_id' => $sessionId,
+                            'userName' => '+' . $sessionId,
+                            'outgoingNumberId' => $assistant[0]['outgoingNumberId'],
+                            'messages' => [],
+                            'is_handover_thread' => $is_handover_thread
+                        ];
+                    }
+                }
+            }
+        }
+    
+        // Recupera i messaggi per ogni thread
+        $threadsToSend = [];
+        foreach ($allThreads as $thread) {
+            $query = ['limit' => 50];
+            try {
+                $messages = $this->client->listThreadMessages($thread['thread_id'], $query);
+                $messages = json_decode($messages, true);
+                //check if metadata is set and contains handover 
+                $messages = $messages['data'];
+                $remappedMessages = array_map(function($entry) {
+                    error_log('get_all_thread_messages_request entry: ' . json_encode($entry));
+                    return [
+                        'sender' => $entry['role'],
+                        'text' => $entry['content'][0]['text']['value'],
+                        'timestamp' => $entry['created_at'],
+                        'handover_message' => isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true"
+                    ];
+                }, $messages);
+                usort($remappedMessages, function($a, $b) {
+                    return $b['timestamp'] < $a['timestamp'] ? 1 : -1;
+                });
+                $thread['messages'] = $remappedMessages;
+                $threadsToSend[] = $thread;
+            } catch (Exception $e) {
+                error_log('Error getting messages for thread ' . $thread['thread_id'] . ' for user ' . $thread['user_id'] . ': ' . $e->getMessage());
+            }
+        }
+        return $threadsToSend;
+    }
+
+    public function get_current_user_thread_message_request() {
         $user_id = apply_filters('determine_current_user', true);
 
         $assistant_id = $this->get_last_assistant_used_for_user($user_id);
 
         if(!isset($assistant_id) || !$assistant_id) {
-            return new WP_REST_Response(['message' => 'Assistant ID not found'], 400);
+            return new WP_REST_Response(['message' => 'Assistant ID not found for current_user_thread'], 400);
         }
 
         $messages = $this->get_thread_messages($assistant_id);
+        $messages = json_decode($messages, true);    
+        // Se non esiste un thread per l'utente corrente restituisci un errore
+        if (!$messages) {
+            return new WP_REST_Response(['message' => 'Thread not found'], 404);
+        }
+        // Restituisci il thread dell'utente corrente
+        return new WP_REST_Response($messages, 200);
+    }
+
+    // Implementa la funzione get_thread_request per l'endpoint get-thread 
+    public function get_thread_messages_request(WP_REST_Request $request) {
+        // Ottieni l'ID dell'utente corrente
+        $thread_id = $request->get_param('thread_id');
+
+        if( $thread_id) { 
+            $messages = $this->get_thread_messages(null, $thread_id);
+            $messages = json_decode($messages, true);
+            if(!isset($messages['data'])) {
+                return new WP_REST_Response(['message' => 'Thread not found'], 404);
+            }
+            $remappedMessages = array_map(function($entry) {
+                error_log('get_thread_messages_request entry: ' . json_encode($entry));
+                $data = [
+                    'sender' => $entry['role'],
+                    'text' => $entry['content'][0]['text']['value'],
+                    'timestamp' => $entry['created_at']
+                ];
+                if(isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true") {
+                    $data['handover_message'] = true;
+                }
+                return $data;
+            }, $messages['data']);	
+            usort($remappedMessages, function($a, $b) {
+                return $b['timestamp'] < $a['timestamp'] ? 1 : -1;
+            });
+            $messages = $remappedMessages;
+            error_log('get_thread_messages_request remappedMessages: ' . json_encode($messages));
+
+        } else {
+            $user_id = apply_filters('determine_current_user', true);
+
+            $assistant_id = $this->get_last_assistant_used_for_user($user_id);
+    
+            if(!isset($assistant_id) || !$assistant_id) {
+                return new WP_REST_Response(['message' => 'Assistant ID not found for get_thread_messages_request'], 400);
+            }
+    
+            $messages = $this->get_thread_messages($assistant_id);
+            $messages = json_decode($messages, true);
+        }
         
         // Se non esiste un thread per l'utente corrente restituisci un errore
         if (!$messages) {
             return new WP_REST_Response(['message' => 'Thread not found'], 404);
         }
         // Restituisci il thread dell'utente corrente
-        return new WP_REST_Response(json_decode($messages, true), 200);
+        return new WP_REST_Response($messages, 200);
     }
 
-    public function get_thread_messages($assistantId) {
-        $user_id = apply_filters('determine_current_user', true);
-        $userSessionId =  $_COOKIE['video_ai_chatbot_session_id'];
-        $threadId = $this->get_thread_id_for_user($user_id, $userSessionId, $assistantId);
-        if(!isset($threadId) || !$threadId) {
-            return [];
+
+    public function get_thread_messages($assistantId, $thread_id = null) {
+        if(!isset($thread_id)) {
+            $user_id = apply_filters('determine_current_user', true);
+            $userSessionId =  $_COOKIE['video_ai_chatbot_session_id'];
+            $thread_id = $this->get_thread_id_for_user($user_id, $userSessionId, $assistantId);
+            if(!isset($thread_id) || !$thread_id) {
+                return [];
+            }
         }
-        $query = ['limit' => 10];
-        $messages = $this->client->listThreadMessages($threadId, $query);
+        $query = ['limit' => 50];
+        $messages = $this->client->listThreadMessages($thread_id, $query);
         return $messages;
     }
 
     public function set_all_options(WP_REST_Request $request) {
         try {
-            $options = $request->get_body_params();
-            error_log('options: ' . json_encode($options));
+            $params = $request->get_body_params();
             // if (!is_array($options)) {
 
             //     return new WP_REST_Response(['message' => 'Invalid options format'], 400);
@@ -277,14 +506,20 @@ class Video_Ai_OpenAi {
             // Valida ulteriormente $options qui se necessario
         
             // Salva le opzioni
+            if(isset($params['video_ai_whatsapp_assistants'])) {
+                $waAssistants = json_decode($params['video_ai_whatsapp_assistants'], true);
+                unset($params['video_ai_whatsapp_assistants']);
+                if(is_array($waAssistants) && count($waAssistants) > 0) {
+                    $this->wa = [];
+                    foreach($waAssistants as $assistant) {
+                        $this->wa[$assistant['assistant']] = new Video_Ai_Chatbot_Wa_Webhooks($this, $assistant['token'], $assistant['outgoingNumberId'], $assistant['assistant']);
+                    }
+                }
+            }
+            $updated = update_option('video_ai_chatbot_options', $params);
+            $updatedWa = update_option('video_ai_whatsapp_assistants', $waAssistants);
 
-            $old = get_option('video_ai_chatbot_options');
-            error_log('Current video_ai_chatbot_options: ' . json_encode($old));
-            error_log('New video_ai_chatbot_options: ' . json_encode($options));
-
-            $updated = update_option('video_ai_chatbot_options', $options);
-        
-            if ($updated) {
+            if ($updated && $updatedWa) {
                 return new WP_REST_Response(['message' => 'Options updated successfully'], 200);
             } else {
                 return new WP_REST_Response(['message' => 'No update needed'], 204);
@@ -337,6 +572,8 @@ class Video_Ai_OpenAi {
 
     public function get_all_options(WP_REST_Request $request) {
         $options = get_option('video_ai_chatbot_options');
+        $waAssistants = get_option('video_ai_whatsapp_assistants', []);
+
         if (false === $options) {
             return new WP_Error('no_options', 'Nessuna opzione trovata', ['status' => 404]);
         }
@@ -346,10 +583,13 @@ class Video_Ai_OpenAi {
             if (strpos($key, 'openai_') === 0) {
                 if (!current_user_can('manage_options')) {
                     unset($options[$key]);
+                    unset($options['video_ai_whatsapp_assistants']);
                 }
             }
         }
-        error_log('options: ' . json_encode($options));
+        if(current_user_can('manage_options')) {
+            $options['video_ai_whatsapp_assistants'] = $waAssistants;
+        }
         return new WP_REST_Response($options, 200);
     }
 
@@ -370,11 +610,8 @@ class Video_Ai_OpenAi {
 
     public function delete_local_files_data() {
         //delete transcriptions and files. Only local, no OPenai
-        error_log("delete_local_files_data");
         $deleteTranscriptions = delete_option("video_ai_chatbot_transcriptions");
         $deleteFiles = delete_option("video_ai_chatbot_files");
-        error_log("deleteTranscriptions: " . $deleteTranscriptions);
-        error_log("deleteFiles: " . $deleteFiles);
         if($deleteFiles && $deleteTranscriptions) {
             echo "Dati cancellati con successo.";
             //add_settings_error('openai_delete_files_data_options', 'openai_file_deleted', 'Dati cancellati con successo.', 'updated');
@@ -390,7 +627,7 @@ class Video_Ai_OpenAi {
     public function delete_assistant(WP_REST_Request $request) {
         $assistant_id = sanitize_text_field($request->get_param('assistant_id'));
         if(!$assistant_id) {
-            return new WP_REST_Response(['message' => 'Assistant ID not found'], 400);
+            return new WP_REST_Response(['message' => 'Assistant ID not found for delete_assistant'], 400);
         }
         try {
             $response = $this->client->deleteAssistant($assistant_id);
@@ -407,16 +644,12 @@ class Video_Ai_OpenAi {
 
     private function handle_retrieve_vector_store_files($vectorStoreId, $after = null, $before = null) {
         $response = $this->communityopenai->retrieveVectorStoreFiles($vectorStoreId, $after, $before);
-        error_log('response: ' . json_encode($response));
         // Ottieni i file salvati
         $savedFiles = get_option('video_ai_chatbot_files', []);
-        error_log('savedFiles: ' . print_r($savedFiles, true));
         // Cerca i file restituiti tra quelli salvati
 
         foreach($savedFiles as $savedFile) {
-            error_log('savedFile: ' . json_encode($savedFile));
             foreach($response['data'] as &$file) {
-                error_log('file: ' . json_encode($file));
                 if($savedFile['vector_store_id'] && $savedFile['vector_store_id'] == $vectorStoreId) {
                     // Aggiungi il contenuto del file alla risposta
                     $file['file_content'] = $savedFile['file_content'];
@@ -431,15 +664,15 @@ class Video_Ai_OpenAi {
     public function handle_retrieve_vector_store_files_request(WP_REST_Request $request) {
         $vectorStoreId = sanitize_text_field($request->get_param('vector_store_id'));
         $parameters = $request->get_param('parameters');
-        error_log('vectorStoreId: ' . $vectorStoreId);
         $response = [];
         try {
-            $response = $this->handle_retrieve_vector_store_files($vectorStoreId, $parameters['after'], $parameters['before']);
+            $after = isset($parameters['after']) ? $parameters['after'] : null;
+            $before = isset($parameters['before']) ? $parameters['before'] : null;
+            $response = $this->handle_retrieve_vector_store_files($vectorStoreId, $after, $before);
         } catch (Exception $e) {
             error_log('error: ' . $e->getMessage());
             return new WP_REST_Response(['error' => 'Vector store not found', 'message' => $e->getMessage()], 500);
         }
-        error_log('response: ' . json_encode($response));
         return new WP_REST_Response($response, 200);
     }
 
@@ -456,7 +689,6 @@ class Video_Ai_OpenAi {
     }
 
     private function updateTranscriptionsWithAssistantId($assistantId, $fileIds) {
-        error_log("updateTranscriptionsWithAssistantId");
         $option_name = 'video_ai_chatbot_transcriptions';
         $transcriptions = get_option($option_name, []);
         //find all transcriptions within fileIds and update assistant_id in place
@@ -467,20 +699,15 @@ class Video_Ai_OpenAi {
             }
             return $transcription;
         }, $transcriptions);
-        error_log('toUpdate: ' . json_encode($toUpdate));
         //print the assistant ids property for each updatedTranscription
-        foreach($toUpdate as $transcription) {
-            error_log('assistant_id: ' . json_encode($transcription['assistant_id']));
-        }
+
         update_option($option_name, $toUpdate);
     }
 
 
     private function cleanUpTranscriptionsFromAssistantId($assistantId) {
-        error_log("cleanUpTranscriptionsFromAssistantId");
         $option_name = 'video_ai_chatbot_transcriptions';
         $transcriptions = get_option($option_name, []);
-        error_log('transcriptions: ' . json_encode($transcriptions));
         $func = function($transcription) use ($assistantId) {
             if(in_array($assistantId, $transcription['assistant_id'])) {
                 // Elimina l'ID dell'assistente
@@ -488,22 +715,25 @@ class Video_Ai_OpenAi {
             }
             return $transcription; 
         };
+        if(!is_array($transcriptions)) { //workaround for old options data
+           update_option($option_name, []);
+           $transcriptions = [];
+        }
         $updatedTranscriptions = array_map($func, $transcriptions);
         //print the assistant ids property for eac updatedTranscription
-        foreach($updatedTranscriptions as $transcription) {
-            error_log('assistant_id: ' . json_encode($transcription['assistant_id']));
-        }
+
         update_option($option_name, $updatedTranscriptions ? $updatedTranscriptions : []);
     }
 
     public function update_assistant_trascrizioni($id, $name, $data, $vectorStoreIds, $files) {
 
-        error_log('update_assistant_trascrizioni');
-        $deleted = $this->communityopenai->deleteVectorStore($vectorStoreIds[0]);
-        error_log('deleted: ' . $deleted);
-        if(!$deleted) {
-            throw new Exception('Failed to delete vector store');
+        if(count($vectorStoreIds) > 0) {
+            $deleted = $this->communityopenai->deleteVectorStore($vectorStoreIds[0]);
+            if(!$deleted) {
+                throw new Exception('Failed to delete vector store');
+            }
         }
+
 
         $vectorStoreId = $this->communityopenai->createVectorStore('vs_name_'.str_replace(' ', '_', $name));
         if(!$vectorStoreId) {
@@ -526,11 +756,14 @@ class Video_Ai_OpenAi {
             $this->updateTranscriptionsWithAssistantId($id, $files);
         }
 
-        error_log('DATAAAA: ' . json_encode($data));       
 
         $data['tool_resources']['file_search']['vector_store_ids'] = [ $vectorStoreId ] ;
         array_push($data['tools'], $this->get_functions());
-
+        array_push($data['tools'], $this->get_allproducts_with_courses_functions());
+        array_push($data['tools'], $this->is_user_registered_function());
+        array_push($data['tools'], $this->add_product_to_cart_function());
+        array_push($data['tools'], $this->get_allproducts_functions());
+        //array_push($data['tools'], $this->handover_function());
         return $data;
 
     }
@@ -543,30 +776,36 @@ class Video_Ai_OpenAi {
         $files= $parameters['files'];
         $vectorStoreIds = $parameters['vector_store_ids'];
         $type = sanitize_text_field($parameters['type']);
-
-        error_log('vectorStoreIds: ' . json_encode($vectorStoreIds));
+        $metadata = $parameters['metadata'];
         
+
         if(!isset($this->client) || !isset($this->communityopenai)) {
+            error_log('OpenAI client not initialized');
             return new WP_REST_Response(['message' => 'OpenAI client not initialized'], 400);
         }
 
         if(!$id) {
-            return new WP_REST_Response(['message' => 'Assistant ID not found'], 400);
+            error_log('Assistant ID not found in update_assistant params');
+            return new WP_REST_Response(['message' => 'Assistant ID not found in update_assistant params'], 400);
         }
 
         if(!$name) {
+            error_log('Name not found');
             return new WP_REST_Response(['message' => 'Name not found'], 400);
         }
 
         if(!$prompt) {
+            error_log('Prompt not found');
             return new WP_REST_Response(['message' => 'Prompt not found'], 400);
         }
 
-        if(!$vectorStoreIds) {
+        if(!isset($vectorStoreIds)) {
+            error_log('Vector store IDs not found');
             return new WP_REST_Response(['message' => 'Vector store IDs not found'], 400);
         }
 
         if(!$type) {
+            error_log('Type not found');
             return new WP_REST_Response(['message' => 'Type not found'], 400);
         }
 
@@ -579,14 +818,14 @@ class Video_Ai_OpenAi {
             'name' => $name,
             'description' => $name,
             'instructions' => $prompt,
-            'tools' => [array('type' => "file_search")]
+            'tools' => [array('type' => "file_search")],
+            'metadata' => $metadata
         ];
 
 
         try {
             if($type == 'trascrizioni') {
                 $data = $this->update_assistant_trascrizioni($id, $name, $data, $vectorStoreIds, $files);
-                error_log('data: ' . json_encode($data));
             } else if($type == 'preventivi' && count($files) > 0) {     
                 try {
                     $this->communityopenai->createVectorStoreFiles($vectorStoreIds[0], $files);
@@ -601,8 +840,11 @@ class Video_Ai_OpenAi {
                                     'file_content' => $file['file_content']];
                         }
                     }, $savedFiles); 
+
+                    array_push($data['tools'], $this->get_allproducts_functions());
+                    array_push($data['tools'], $this->add_product_to_cart_function());
+                    array_push($data['tools'], $this->handover_function());
                            
-                    error_log('updatedFiles: ' . json_encode($updatedFiles));
                     update_option('video_ai_chatbot_files', $updatedFiles);     
                 } catch(Exception $e) {
                     error_log('error: ' . $e->getMessage());
@@ -613,7 +855,6 @@ class Video_Ai_OpenAi {
             }
             $response = $this->client->modifyAssistant($id, $data);
             $decoded_res = json_decode($response);
-            error_log('decoded_res: ' . $response);
             if(isset($decoded_res->error))
             {
                 throw new Exception($decoded_res->error->message);
@@ -624,6 +865,57 @@ class Video_Ai_OpenAi {
         } catch (Exception $e) {
             return new WP_REST_Response(['message' => $e->getMessage()], 500);
         }
+    }
+
+    public function set_thread_handover($threadId, $isHandover) {
+        $thread = $this->client->retrieveThread($threadId);
+        $thread = json_decode($thread, true);
+        $metadata = $thread['metadata'];
+        $metadata['handover'] = $isHandover ? "true" : "false";
+        $data = ['metadata' => $metadata];
+        $response = $this->client->modifyThread($threadId, $data);
+        error_log('set_thread_handover thread: ' . json_encode($thread));
+
+        error_log('set_thread_handover data: ' . json_encode($data));
+        return $response;
+    } 
+
+    public function user_handover($thread_id, $message) {
+        $response = null;
+        try {
+            $query = ['limit' => 10];
+            $runs = $this->cancel_all_runs_for_thread_id($thread_id);
+            $response = $this->set_thread_handover($thread_id, true);
+            error_log('user_handover modifyThread response: ' . json_encode($response));
+            $msgData = [
+                'role' => 'assistant',
+                'content' => $message,
+                'metadata' => [
+                    'postprompt' => 'false',
+                    'handover_message' => 'true'
+                ]
+            ];
+            $message = $this->client->createThreadMessage($thread_id, $msgData);
+            error_log('user_handover message: ' . json_encode($message));
+        } catch (Exception $e) {
+            return $response;
+        }
+        return $response;
+    }
+
+    public function terminate_handover($thread_id) {
+        $response = null;
+        try {
+            $thread = $this->client->retrieveThread($thread_id);
+            $thread = json_decode($thread, true);
+            $metadata = $thread['metadata'];
+            $metadata['handover'] = "false";
+            $data = ['metadata' => $metadata];
+            $response = $this->client->modifyThread($thread_id, $data);
+        } catch (Exception $e) {
+            return $response;
+        }
+        return $response;
     }
 
     public function delete_transcription_request(WP_REST_Request $request) {
@@ -685,7 +977,6 @@ class Video_Ai_OpenAi {
             // Elimina il file da OpenAI
             $deleted_file = $this->client->deleteFile($file_id);
             $deleted_file = json_decode($deleted_file, true);
-            error_log('deleted_file: ' . json_encode($deleted_file));
             if($deleted_file['error']) {
                 throw new Exception($deleted_file['error']['message']);
             }
@@ -701,7 +992,6 @@ class Video_Ai_OpenAi {
         if($old_file_id && !is_numeric($old_file_id) ) {
             try {
                 $deletedFile = $this->delete_file($old_file_id);
-                error_log('deletedFile: ' . json_encode($deletedFile));
             } catch (Exception $e) {
                 return new WP_REST_Response(['message' => 'Failed to delete old transcription', 'error' => $e->getMessage()], 500);
             }
@@ -727,12 +1017,10 @@ class Video_Ai_OpenAi {
         } catch (Exception $e) {
             return new WP_REST_Response(['message' => $e->getMessage()], 500);
         }
-        error_log('response: ' . json_encode($response));
 
         $files = get_option('video_ai_chatbot_files', []);
         $files = wp_parse_args($files, []);
         $files[] = ['id' => $response['id'], 'vector_store_id' => '' , 'file_name' => $file_name, 'file_content' => $file_content];
-        error_log('files: ' . json_encode($files));
         update_option('video_ai_chatbot_files', $files);
 
         return new WP_REST_Response(['message' => 'File uploaded successfully', 'file_id' => $response['id']], 200);
@@ -743,7 +1031,6 @@ class Video_Ai_OpenAi {
         if($old_file_id && !is_numeric($old_file_id) ) {
             try {
                 $deletedFile = $this->delete_transcription($old_file_id);
-                error_log('deletedFile: ' . json_encode($deletedFile));
             } catch (Exception $e) {
                 return new WP_REST_Response(['message' => 'Failed to delete old transcription', 'error' => $e->getMessage()], 500);
             }
@@ -791,12 +1078,9 @@ class Video_Ai_OpenAi {
                 'transcription' => $transcription['transcription']
             ];
             $transcriptions[] = $newTrans;
-            error_log('transcription: ' . json_encode($newTrans));
             update_option($option_name, $transcriptions);
 
             if($transcription['assistant_id'] && $file_id) {
-                error_log('assistant_id: ' . json_encode($transcription['assistant_id']));
-                error_log('file_id: ' . $file_id);
                 foreach($transcription['assistant_id'] as $assistant_id) {
                     try {
                         $vector_store_ids = $this->communityopenai->retrieveVectorStoreIdFromAssistantId($assistant_id);
@@ -922,6 +1206,237 @@ class Video_Ai_OpenAi {
         ];
     }
 
+    private function get_allcourses_functions() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'get_all_courses',
+                'description' => 'Get all available courses on the platform',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'courses' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'string'
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+
+    private function get_allproducts_functions() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'get_all_products',
+                'description' => 'Get all available produtcts on the platform',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'products' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'string'
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    private function get_allproducts_with_courses_functions() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'get_all_products_with_courses',
+                'description' => 'Get all available products and courses on the platform',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'products' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'string'
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    private function is_user_registered_function() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'is_user_registered',
+                'description' => 'Check if the user is registered',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'is_registered' => [
+                            'type' => 'string'
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    private function get_products_courses_map_function() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'get_products_courses_map',
+                'description' => 'Get all associated products and courses. Used to map products to courses',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'associations' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'courseid' => [
+                                        'type' => 'string',
+                                    ],
+                                    'productId' => [
+                                        'type' => 'string',
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    private function add_product_to_cart_function() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'add_product_to_cart',
+                'description' => 'Add a product to the WooCommerce cart',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'product_id' => [
+                            'type' => 'string',
+                        ]
+                    ]
+                ]
+            ]
+        ];
+    }
+
+    private function handover_function() {
+        return [
+            'type' => "function",
+            'function' => [
+                'name' => 'handover',
+                'description' => 'pass conversation to human operator',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'handover_motivation' => [
+                            'type' => 'string',
+                        ]
+                    ],
+                    'required' => []
+                    ]
+                ]
+        ];
+    }
+
+
+
+    	/**
+     * Aggiunge un prodotto al carrello di WooCommerce.
+     *
+     * @param int $product_id ID del prodotto da aggiungere.
+     * @param int $quantity Quantità del prodotto da aggiungere. Default è 1.
+     * @return bool True se il prodotto è stato aggiunto con successo, false altrimenti.
+     */
+
+
+    public function add_product_to_cart( $product_id, $quantity = 1 ) {
+        // Verifica se WooCommerce è attivo
+        if ( ! class_exists( 'WooCommerce' ) ) {
+            return false;
+        }
+
+        // Load cart functions which are loaded only on the front-end.
+        include_once WC_ABSPATH . 'includes/wc-cart-functions.php';
+        include_once WC_ABSPATH . 'includes/class-wc-cart.php';
+
+        if (null === WC()->cart) {
+            wc_load_cart();
+        }
+
+        // Aggiungi il prodotto al carrello
+        $added = WC()->cart->add_to_cart( $product_id, $quantity );
+
+        // Verifica se il prodotto è stato aggiunto con successo
+        if ( $added ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+ * Ottiene l'elenco di tutti i prodotti acquistabili su WooCommerce con tutte le informazioni
+ *
+ * @return array Elenco dei prodotti con tutte le informazioni
+ */
+function get_wc_products_full_info() {
+    // Assicurati che WooCommerce sia attivo
+    if ( ! in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
+        error_log('WooCommerce is not active');
+        return;
+    }
+    // Argomenti per la query dei prodotti
+    $args = array(
+        'post_type' => 'product',
+        'post_status' => 'publish',
+        'posts_per_page' => -1
+    );
+
+    // Esegue la query dei prodotti
+    $products = get_posts( $args );
+    $product_list = array();
+
+    // Itera su ogni prodotto e ottiene le informazioni complete
+    foreach ( $products as $product ) {
+        $product_obj = wc_get_product( $product->ID );
+        if ( $product_obj->is_purchasable() ) {
+            $product_list[] = array(
+                'id' => $product->ID,
+                'name' => $product->post_title,
+                'description' => $product->post_content,
+                'short_description' => $product->post_excerpt,
+                'price' => $product_obj->get_price(),
+                'regular_price' => $product_obj->get_regular_price(),
+                'sale_price' => $product_obj->get_sale_price(),
+                'sku' => $product_obj->get_sku(),
+                'stock_status' => $product_obj->get_stock_status(),
+                'image_url' => wp_get_attachment_url( $product_obj->get_image_id() ),
+                'categories' => wp_get_post_terms( $product->ID, 'product_cat', array( 'fields' => 'names' ) ),
+                'tags' => wp_get_post_terms( $product->ID, 'product_tag', array( 'fields' => 'names' ) )
+            );
+        }
+    }
+
+    error_log('count products: ' . count($product_list));
+    return $product_list;
+}
+
     private function get_base_url() {
         $protocol = isset($_SERVER['HTTPS']) && 
         $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
@@ -931,11 +1446,12 @@ class Video_Ai_OpenAi {
 
     public function create_assistant(WP_REST_Request $request) {
         $parameters = $request->get_json_params();
-        error_log('parameters: ' . json_encode($parameters));
         $name = sanitize_text_field($parameters['name']);
         $prompt = sanitize_textarea_field($parameters['prompt']);
         $type = sanitize_text_field($parameters['type']);
+        $metadata = $parameters['metadata'];
         if(!isset($this->client) || !isset($this->communityopenai)) {
+            error_log('OpenAI client not initialized');
             return new WP_REST_Response(['message' => 'OpenAI client not initialized'], 400);
         }
 
@@ -943,6 +1459,7 @@ class Video_Ai_OpenAi {
             $vectorStoreId = $this->communityopenai->createVectorStore('vs_name_'.str_replace(' ', '_', $name));
                     
             if(!$vectorStoreId) {
+                error_log('Failed to create vector store');
                 throw new Exception('Failed to create vector store');
             }
 
@@ -964,7 +1481,6 @@ class Video_Ai_OpenAi {
                             }
                         }
                         // Salva l'array aggiornato
-                        error_log('savedFiles: ' . json_encode($savedFiles));
                         update_option('video_ai_chatbot_files', $savedFiles);
 
                     } else {
@@ -975,6 +1491,9 @@ class Video_Ai_OpenAi {
         } catch (Exception $e) {
             return new WP_REST_Response(['message' => $e->getMessage()], 500);
         }
+
+        $metadata = array_merge($metadata, ['type' => $type, 'url' => $this->get_base_url()]);
+
 
 
         $data = [
@@ -988,14 +1507,22 @@ class Video_Ai_OpenAi {
                 ]                
             ],
             'tool_resources'=> [ 'file_search' => [ 'vector_store_ids' => [$vectorStoreId] ]],
-            'metadata' => [
-                'type' => $type,
-                'url' => $this->get_base_url()
-            ]
+            'metadata' => $metadata
         ];
 
         if($type == 'trascrizioni') {
             array_push($data['tools'], $this->get_functions());
+            // array_push($data['tools'], $this->get_allcourses_functions());
+            array_push($data['tools'], $this->get_allproducts_functions());
+            // array_push($data['tools'], $this->get_products_courses_map_function());
+            array_push($data['tools'], $this->get_allproducts_with_courses_functions());
+            array_push($data['tools'], $this->is_user_registered_function());
+            array_push($data['tools'], $this->add_product_to_cart_function());
+            //array_push($data['tools'], $this->handover_function());
+        } else if($type == 'preventivi') {
+            array_push($data['tools'], $this->get_allproducts_functions());
+            array_push($data['tools'], $this->add_product_to_cart_function());
+            array_push($data['tools'], $this->handover_function());
         }
     
         try {
@@ -1013,20 +1540,67 @@ class Video_Ai_OpenAi {
                         }
                     }
                 } catch (Exception $e) {
+                    error_log('error: ' . $e->getMessage());
                     return new WP_REST_Response(['message' => $e->getMessage()], 500);
                 }   
                 return new WP_REST_Response(['message' => 'Assistant created successfully', 'assistant_id' => $decoded_res['id']], 200);
             } else {
+                error_log('Failed to create assistant');
                 return new WP_REST_Response(['message' => 'Failed to create assistant'], 500);
             }
         } catch (Exception $e) {
+            error_log('error: ' . $e->getMessage());
             return new WP_REST_Response(['message' => $e->getMessage()], 500);
         }
+    }
+
+    
+
+    public function get_filtered_assistants() {
+
+        $current_user = wp_get_current_user();
+        $user_roles = $current_user->roles;
+    
+        if (in_array('pmpro_role_1', $user_roles)) {
+            $user_role = 'abbonato';
+        } else if (in_array('customer', $user_roles)) {
+            $user_role = 'cliente';
+        } else if (in_array('subscriber', $user_roles)) {
+            $user_role = 'registrato';
+        } else {
+            $user_role = 'non_registrato';
+        }
+
+        // Recupera tutti gli assistenti
+        $assistants = $this->get_assistants();
+
+        // Filtra gli assistenti in base al ruolo dell'utente
+        $filtered_assistants = array_filter($assistants, function($assistant) use ($user_role) {
+            $level = isset($assistant['metadata']['roles']) ? $assistant['metadata']['roles'] : null;
+            $roles = explode('|', $level);
+
+            switch ($user_role) {
+                case 'non_registrato':
+                    return in_array('non_registrato', $roles);
+                case 'registrato':
+                    return in_array('registrato', $roles);
+                case 'cliente':
+                    return in_array('cliente', $roles);
+                case 'abbonato':
+                    return in_array('abbonato', $roles);
+                default:
+                    return false;
+            }
+            
+        });
+
+        return array_values($filtered_assistants);
     }
 
     public function get_assistants() {
         // Recupera gli assistenti utilizzando le API di OpenAI
         if(!isset($this->client)) {
+            error_log('OpenAI client not initialized');
             return [];
         }
         $query = ['limit' => 100];
@@ -1035,14 +1609,10 @@ class Video_Ai_OpenAi {
         if(isset($assistants['error'])) {
             throw new Exception($assistants['error']['message']);
         }
-        error_log('assistants: ' . json_encode($assistants['data']));
         $filtered = array_filter($assistants['data'], function($v) {
             $url = $v['metadata']['url'];
-            error_log("v: "  . json_encode($url));
-            error_log("base_url: "  . $this->get_base_url());	
             return !isset($url) || $url == $this->get_base_url();
         });
-        error_log('filtered: ' . json_encode($filtered));
         return array_values($filtered);
     }
 
@@ -1058,8 +1628,22 @@ class Video_Ai_OpenAi {
         }
     }
 
+    public function get_filtered_assistants_request() {
+        if(!isset($this->client)) {
+            return new WP_REST_Response(['success' => false, 'message' => 'OpenAI client not initialized'], 400);
+        }
+        try {
+            $assistants = $this->get_filtered_assistants();
+            return new WP_REST_Response($assistants, 200);
+        } catch (Exception $e) {
+            return new WP_REST_Response(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    
+
     public function handle_wa_chatbot_request($input_text, $assistant_id, $phoneNumber) {
-        $result = $this->handle_chatbot_request($input_text, $assistant_id, $phoneNumber);
+        $result = $this->handle_chatbot_request($input_text, $assistant_id, $phoneNumber, true);
         // if($result->error) {
         //     return new WP_REST_Response(['message' => $result->message], 500);
         // }
@@ -1073,7 +1657,7 @@ class Video_Ai_OpenAi {
         $assistant_id = $parameters['assistant_id'];
         $postprompt = $parameters['postprompt'];
 
-        $result = $this->handle_chatbot_request($input_text, $assistant_id, $_COOKIE['video_ai_chatbot_session_id'], $postprompt);
+        $result = $this->handle_chatbot_request($input_text, $assistant_id, $_COOKIE['video_ai_chatbot_session_id'], false, $postprompt);
         if($result['error']) {
             return new WP_REST_Response(['message' => $result['message']], 500);
         }
@@ -1093,7 +1677,6 @@ class Video_Ai_OpenAi {
         $threadId = null;
         if ($user_id != 0) {
             $userThreads  = json_decode(get_user_meta($user_id, 'openai_thread_id', true),true);
-            error_log('userThreads: ' . json_encode($userThreads));
         } else if (isset($userSessionId)) {
             //$threadId = get_option('thread_id' . $userSessionId);
             $threads = get_option('video_ai_chatbot_threads', []);
@@ -1126,17 +1709,21 @@ class Video_Ai_OpenAi {
         return false;
     }
 
-    private function set_last_assistant_used_for_user($user_id, $assistant_id) {
+    private function set_last_assistant_used_for_user($user_id, $assistant_id, $userSessionId = null) {
         if ($user_id != 0) {
             update_user_meta($user_id, 'video_ai_chatbot_last_assistant', $assistant_id);
         } else {
             $sessions = get_option('video_ai_chatbot_sessions', []);
-            $userSessionId = $_COOKIE['video_ai_chatbot_session_id'];
-            $sessionInfo = [
-                'last_assistant' => $assistant_id
-            ];
-            $sessions[$userSessionId] = $sessionInfo;
-            update_option('video_ai_chatbot_sessions', $sessions);
+            if(!isset($userSessionId)) {
+                $userSessionId = $_COOKIE['video_ai_chatbot_session_id'];
+            }
+            if(isset($userSessionId)) {
+                $sessionInfo = [
+                    'last_assistant' => $assistant_id
+                ];
+                $sessions[$userSessionId] = $sessionInfo;
+                update_option('video_ai_chatbot_sessions', $sessions);
+            }
         }
     }
 
@@ -1161,7 +1748,7 @@ class Video_Ai_OpenAi {
         $runs = $this->client->listRuns($thread_id, $query);
         $runs = json_decode($runs, true);
         
-        if(!isset($runs)) {
+        if(!isset($runs) || !isset($runs['data'])) {
             return new WP_REST_Response(['message' => 'No runs found'], 500);
         }
 
@@ -1169,28 +1756,75 @@ class Video_Ai_OpenAi {
             foreach ($runs['data'] as $run) {
                 if(!($run['status'] == 'completed' || $run['status'] == 'failed' || $run['status'] == 'expired')) {
                     $result = $this->client->cancelRun($thread_id, $run['id']);
-                    error_log('result: ' . json_encode($result));
                 }
             }
         }
-        // if (isset($runs['error'])) {
-        //     return new WP_REST_Response(['message' => $runs['error']['message']], 500);
-        // }
-        // foreach ($runs['data'] as $run) {
-        //     $this->client->cancelRun($thread_id, $run['id']);
-        // }
+
+        return new WP_REST_Response(['message' => 'Runs cancelled successfully'], 200);
+    }
+
+    public function cancel_all_runs_for_user($user_id) {
+        $assistant_id = $this->get_last_assistant_used_for_user($user_id);
+        $thread_id = $this->get_thread_id_for_user($user_id, $_COOKIE['video_ai_chatbot_session_id'], $assistant_id);
+        $query = ['limit' => 50];
+        $runs = $this->client->listRuns($thread_id, $query);
+        $runs = json_decode($runs, true);
+        
+        if(!isset($runs) || !isset($runs['data'])) {
+            return new WP_REST_Response(['message' => 'No runs found'], 500);
+        }
+
+        if(count($runs['data']) > 0) {
+            foreach ($runs['data'] as $run) {
+                if(!($run['status'] == 'completed' || $run['status'] == 'failed' || $run['status'] == 'expired')) {
+                    $result = $this->client->cancelRun($thread_id, $run['id']);
+                }
+            }
+        }
+
+        return new WP_REST_Response(['message' => 'Runs cancelled successfully'], 200);
+    }
+
+    public function cancel_all_users_runs() {
+        $users = get_users();
+        foreach ($users as $user) {
+            $this->cancel_all_runs_for_user($user->ID);
+        }
+        //iterate on video_ai_chatbot_sessions and delete all the threads
+        $sessions = get_option('video_ai_chatbot_sessions', []);
+        foreach ($sessions as $key => $session) {
+            $this->cancel_all_runs_for_user($key);
+        }
         return new WP_REST_Response(['message' => 'Runs cancelled successfully'], 200);
     }
 
 
-    public function handle_chatbot_request($input_text, $assistant_id, $userSessionId, $userpostprompt = null) {
-        if (!isset($this->client)) {
-            return new WP_REST_Response(['message' => 'OpenAI client not initialized'], 400);
+
+    public function cancel_all_runs_for_thread_id($thread_id) {
+        $query = ['limit' => 50];
+        $runs = $this->client->listRuns($thread_id, $query);
+        $runs = json_decode($runs, true);
+        
+        if(!isset($runs) || !isset($runs['data'])) {
+            return new WP_REST_Response(['message' => 'No runs found'], 500);
         }
 
-        // if($userpostprompt != null && $userpostprompt != "" && $userpostprompt == "true") {
-        //     return new WP_REST_Response(['assistant_choice' => true], 200);
-        // } 
+        if(count($runs['data']) > 0) {
+            foreach ($runs['data'] as $run) {
+                if(!($run['status'] == 'completed' || $run['status'] == 'failed' || $run['status'] == 'expired')) {
+                    $result = $this->client->cancelRun($thread_id, $run['id']);
+                }
+            }
+        }
+
+        return new WP_REST_Response(['message' => 'Runs cancelled successfully'], 200);
+    }
+
+
+    public function handle_chatbot_request($input_text, $assistant_id, $userSessionId, $wa = false, $userpostprompt = null) {
+        if (!isset($this->client)) {
+            throw new Exception('OpenAI client not initialized');
+        }
 
         try {
             if (!isset($assistant_id)) {
@@ -1198,33 +1832,35 @@ class Video_Ai_OpenAi {
             }
 
             $user_id = apply_filters('determine_current_user', true);
-            $this->set_last_assistant_used_for_user($user_id, $assistant_id);
+            $this->set_last_assistant_used_for_user($user_id, $assistant_id, $wa ? $userSessionId : null);
 
             $additional_instructions = '';	
+            error_log('user_id: ' . $user_id);
             if($user_id != 0) {
                 $user_display_name = get_userdata($user_id)->display_name;
-
-                error_log('user_display_name: ' . $user_display_name);
-    
-                if ($user_display_name && isset($userpostprompt) && $userpostprompt == "true") {
-                    $additional_instructions = "Ciao mi chiamo " . $user_display_name . ". Tu chi sei?";
-                }
+                $additional_instructions = 'Il nome dell\'utente è: ' . $user_display_name;
             }
             $threadId = $this->get_thread_id_for_user($user_id, $userSessionId, $assistant_id);
 
-            $thread = $this->get_or_create_thread($threadId, $assistant_id);
+            error_log('threadId: ' . $threadId);
+            $thread = $this->get_or_create_thread($threadId, $assistant_id, $userSessionId, $wa);
+
+            $handover = "false";
+            if(isset($thread['metadata']['handover']) && $thread['metadata']['handover'] == 'true') {
+                $handover = "true";
+            }
 
             $msgData = [
                 'role' => 'user',
-                'content' => $additional_instructions != "" ? $additional_instructions : $input_text,
+                'content' => $input_text,
                 'metadata' => [
-                    'postprompt' => isset($userpostprompt) ? $userpostprompt : 'false'
+                    'postprompt' => isset($userpostprompt) ? $userpostprompt : 'false',
+                    'handover_message' => $handover
                 ]
             ];
 
             $message = $this->client->createThreadMessage($thread['id'], $msgData);
 
-            error_log('message: ' . json_encode($message));
 
             if (!$message) {
                 throw new Exception('no message received');
@@ -1233,13 +1869,24 @@ class Video_Ai_OpenAi {
                 throw new Exception($message['error']['message']);
             }
 
+            //verifica se tra i metadati del thread c'è il campo handover == "true"
+            if($handover == "true") {
+                //$this->search_and_delete_thread_id_for_user($user_id);
+                $data = [
+                    'success' => true,
+                    "error" => false,
+                    "message" => [ 'value' => 'handover'],
+                ];
+                return $data;
+            }
+
             $runData = [
                 'assistant_id' => $assistant_id,
             ];
 
-            // if($additional_instructions != "") {
-            //     $runData['additional_instructions'] = $additional_instructions;
-            // }
+            if($additional_instructions != "") {
+                $runData['additional_instructions'] = $additional_instructions;
+            }
 
             $run = $this->client->createRun($thread['id'], $runData);
             $run = json_decode($run, true);
@@ -1252,11 +1899,13 @@ class Video_Ai_OpenAi {
             $start_time = time();
             // Wait for the response to be ready
             while (($run['status'] == "in_progress" || $run['status'] == "queued") || $run['status'] == "requires_action" && (time() - $start_time) < 5000) {
-                error_log('run status: ' . json_encode($run['status']));
+                //error_log('run status: ' . json_encode($run['status']));
                 sleep(1);
                 if($run['status'] == "requires_action" ) {
                     try {
-                        $run = $this->handle_assistant_function_call($user_id, $run);
+                        $run = $this->handle_assistant_function_call(isset($user_id) || !$user_id ? $user_id : $userSessionId, $run);
+                        error_log('run: FUNCTION CALL userid ' . $user_id);
+                        error_log('run: FUNCTION CALL sessionid ' . $userSessionId);
                         error_log('run: FUNCTION CALL ' . json_encode($run));
                     } catch (Exception $e) {
                         throw new Exception($e->getMessage());
@@ -1264,6 +1913,8 @@ class Video_Ai_OpenAi {
                 } else {
                     $run = $this->client->retrieveRun($thread['id'], $run['id']);
                     $run = json_decode($run, true);
+                    error_log('run: FUNCTION CALL userid' . $user_id);
+                    error_log('run: FUNCTION CALL sessionid' . $userSessionId);
                     error_log('run: NORMAL ' . json_encode($run));	
                 }
             }
@@ -1276,11 +1927,11 @@ class Video_Ai_OpenAi {
                 throw new Exception('Timeout');
             }
 
-            $query = ['limit' => 10];
+            $query = ['limit' => 20];
             $messages = $this->client->listThreadMessages($thread['id'], $query);
             $messages = json_decode($messages, true);
 
-            error_log('messages: ' . json_encode($messages));
+            //error_log('messages: ' . json_encode($messages));
 
             if (!$messages) {
                 throw new Exception('no messages received');
@@ -1305,27 +1956,92 @@ class Video_Ai_OpenAi {
             $data = [
                 "error" => true,
                 "message" => $e->getMessage(),
+                "run_cancelled" => $this->cancel_all_runs()
             ];
             return $data;
         }
     }
 
     private function handle_assistant_function_call($userId, $run) {
-        error_log('handle_assistant_function_call run: ' . json_encode($run));
+        error_log('handle_assistant_function_call userId: ' . $userId);
         if (!isset($this->client)) {
             return null;
         }
         
         if(isset($run['required_action']['submit_tool_outputs']) && isset($run['required_action']['submit_tool_outputs']['tool_calls'])) {
             $toolCalls = $run['required_action']['submit_tool_outputs']['tool_calls'];
-            $outputs = array_map(function($toolCall) use ($userId) {
+            $outputs = array_map(function($toolCall) use ($userId, $run) {
                 if($toolCall['function']['name'] == 'get_user_courses') {
                     error_log('Called fucntion: ' . $toolCall['function']['name']);
                     return [
                         'tool_call_id' => $toolCall['id'],
                         'output' =>  json_encode($this->tutorUtils->get_active_courses_by_user($userId))
                     ];
-                }	
+                }
+                if($toolCall['function']['name'] == 'get_all_courses') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode($this->tutorUtils->course())
+                    ];
+                }		
+                if($toolCall['function']['name'] == 'get_all_products') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode($this->get_wc_products_full_info())
+                    ];
+                }
+                if($toolCall['function']['name'] == 'get_products_courses_map') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode($this->tutorUtils->get_products_courses_map())
+                    ];
+                }
+                if($toolCall['function']['name'] == 'get_all_products_with_courses') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode($this->tutorUtils->get_products_with_courses())
+                    ];
+                }		
+                if($toolCall['function']['name'] == 'is_user_registered') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode((apply_filters('determine_current_user', true) != 0))
+                    ];
+                }
+                if($toolCall['function']['name'] == 'add_product_to_cart') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    $arguments = $toolCall['function']['arguments'];
+                    error_log('arguments: ' . json_encode($arguments));
+                    $arguments = json_decode($arguments);
+                    $product_id = intval($arguments->product_id);
+                    if(!isset($product_id) || $product_id == 0) {
+                        throw new Exception('Product ID not found');
+                    }
+                    error_log('product_id: ' . $product_id);
+
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode($this->add_product_to_cart($product_id))
+                    ];
+                }
+                if($toolCall['function']['name'] == 'handover') {
+                    error_log('Called fucntion: ' . $toolCall['function']['name']);
+                    $arguments = $toolCall['function']['arguments'];
+                    $arguments = json_decode($arguments, true);
+                    error_log('handover arguments: ' . json_encode($arguments));
+                    if(isset($arguments)) {
+                        $motivation = $arguments['handover_motivation'];
+                    }
+                    return [
+                        'tool_call_id' => $toolCall['id'],
+                        'output' =>  json_encode($this->handover($run, $arguments, $userId))
+                    ];
+                }				
             }, $toolCalls);
 
             $run = $this->communityopenai->submit_function_call_output($run['id'], $run['thread_id'], $outputs);
@@ -1338,7 +2054,38 @@ class Video_Ai_OpenAi {
         return $run;
     }
 
-    private function get_or_create_thread($threadId, $assistant_id) {
+    private function handover($run, $motivation, $userId) {
+        error_log('handover run: ' . json_encode($run));
+        error_log('handover userId: ' . $userId);
+        //$result = $this->client->cancelRun($thread_id, $run['id']);
+        //get assistant from thread_id
+        $assistant_id = $run['assistant_id'];
+        $result = $this->set_thread_handover($run['thread_id'], true);
+        $notificationNumbers = get_option('video_ai_chatbot_notification_numbers', []);
+        $notificationNumbers = json_decode($notificationNumbers, true);
+        $waAssistant = null;
+        foreach($this->wa as $assistant) {
+            if($assistant->get_assistant_id() == $assistant_id) {
+                $waAssistant = $assistant;
+                break;
+            }
+        }
+        if(isset($waAssistant)) {
+            foreach ($notificationNumbers as $number) {
+                error_log('number: ' . $number);
+                $because = $motivation ? $motivation['handover_motivation']  : 'sconosciuta';
+                $response = $waAssistant->send_whatsapp_message($number, 'L\'utente ha richiesto l\'assistenza di un operatore. Motivazione: ' . $because, false);
+            }
+        }
+        $result = [
+            'success' => true,
+            'error' => false,
+            'message' => 'handover'
+        ];
+        return $result;
+    }
+
+    private function get_or_create_thread($threadId, $assistant_id, $userSessionId, $wa = false) {
         if (isset($threadId)) {
             $thread = $this->client->retrieveThread($threadId);
             $thread = json_decode($thread, true);
@@ -1358,6 +2105,12 @@ class Video_Ai_OpenAi {
                 ]
             ];
 
+            if($wa) {
+                $mData['metadata'] = [
+                    'wa' => 'true'
+                ];
+            }
+
             $thread = $this->client->createThread($mData);
             $thread = json_decode($thread, true);
             if (isset($thread['error']) || !isset($thread['id'])) {
@@ -1372,6 +2125,9 @@ class Video_Ai_OpenAi {
             }
             if (isset($userSessionId)) {
                 $threads = get_option('video_ai_chatbot_threads', []);
+                if(!isset($threads[$userSessionId])) {
+                    $threads[$userSessionId] = [];
+                }
                 $threads[$userSessionId][$assistant_id] = $thread['id'];
                 update_option('video_ai_chatbot_threads', $threads);
             }
@@ -1387,7 +2143,31 @@ class Video_Ai_OpenAi {
     public function handle_thread_deletion() {
         // $user_id = get_current_user_id();
         $user_id = apply_filters( 'determine_current_user', true );
-        echo '<h1>'.  $user_id  . '</h1>';
+        $result = handle_thread_deletion_for_thread_id($user_id);
+
+        if(!isset($result)) {
+            return new WP_REST_Response(['message' => 'Cannot delete thread'], 500);
+        }
+	
+		return new WP_REST_Response(json_decode($result), 200);
+	}
+
+    public function delete_all_threads() {
+        $threads = get_option('video_ai_chatbot_threads', []);
+        foreach($threads as $userSessionId => $thread) {
+            foreach($thread as $assistantId => $threadId) {
+                $result = $this->client->deleteThread($threadId);
+                if ($result) {
+                    unset($threads[$userSessionId][$assistantId]);
+                }
+            }
+        }
+        update_option('video_ai_chatbot_threads', $threads);
+        return new WP_REST_Response(['message' => 'All threads deleted successfully'], 200);
+    }
+
+    public function handle_thread_deletion_for_thread_id($user_id) {
+        $result = null;
         if($user_id != 0) {
             $threadId = $this->search_and_delete_thread_id_for_user($user_id);
         }
@@ -1401,7 +2181,7 @@ class Video_Ai_OpenAi {
 			}
 		}
 	
-		return new WP_REST_Response(json_decode($result), 200);
+		return $result;
 	}
 
     public function delete_unused_vector_stores() {
@@ -1410,8 +2190,6 @@ class Video_Ai_OpenAi {
         //$vectorStores = $response['data'];
         try{ 
             $vectorStores = array_filter($vectorStores, function($vectorStore) {
-                error_log("files count" . $vectorStore->fileCounts->total);
-                error_log("checkIfStoredAssistantsContainsVectorStore" . $this->checkIfStoredAssistantsContainsVectorStore($vectorStore->id));
                 return $vectorStore->fileCounts->total === 0 && $this->checkIfStoredAssistantsContainsVectorStore($vectorStore->id);
             });
         } catch (Exception $e) {
@@ -1436,7 +2214,6 @@ class Video_Ai_OpenAi {
             throw new Exception('No assistants found');
         }
         $assistants = $assistants['data'];
-        error_log('assistants: ' . json_encode($assistants));   
         $assistants = array_filter($assistants, function($assistant) use ($vectorStoreId) {
             return in_array($vectorStoreId, $assistant['tool_resources']['file_search']['vector_store_ids']);
         });

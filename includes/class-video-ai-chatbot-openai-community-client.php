@@ -14,10 +14,13 @@ class Video_Ai_Community_OpenAi {
 	 * @param      string    $version    The version of this plugin.
 	 */
 	public function __construct() {
-        $api_key = get_option('video_ai_chatbot_options')['openai_api_key_field'];
-		if ($api_key) {
-            $this->activate($api_key);
-		}
+        $options = get_option('video_ai_chatbot_options');
+        if($options && isset($options['openai_api_key_field'])) {
+            $api_key = $options['openai_api_key_field'];
+            if ($api_key) {
+                $this->activate($api_key);
+            }
+        }
 	}
 
     public function is_active() {

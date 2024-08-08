@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Chatbot, { createChatBotMessage, createClientMessage, createCustomMessage } from 'react-chatbot-kit';
 import config from '../config';
 import MessageParser from '../messageParser';
@@ -19,14 +19,14 @@ const ChatbotStyleWrapper = (props) => {
 
 const VideoAiChatbot = () => {
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
-  const [assistants, setAssistants] = useState(window.ChatbotData.assistants.data ? window.ChatbotData.assistants.data: []);
+  const assistants = window.ChatbotData.assistants.data ? window.ChatbotData.assistants.data : [];
 
   let oldMessages = window.ChatbotData.messages.data.data ? window.ChatbotData.messages.data.data : [];
   
+  let wMessage = window.ChatbotData.welcomeMessage ? window.ChatbotData.welcomeMessage : "";
   
   let messageHistory = [];
   for(let i = 0; i < oldMessages.length; i++) {
-    console.log('oldMessages[i]:', oldMessages[i]);
     if(oldMessages[i].role === "user" && !(oldMessages[i].metadata?.postprompt === "true"	)) {
       messageHistory.push(createClientMessage(oldMessages[i].content[0].text.value));
       //continue;
@@ -34,42 +34,49 @@ const VideoAiChatbot = () => {
       messageHistory.push(createCustomMessage(oldMessages[i].content[0].text.value,
                                               "customWithLinks", 
                                               {payload: oldMessages[i].content[0].text.value}));
-    }
+    } 
   }
 
   const [messages, setMessages] = useState(messageHistory.reverse());
 
   let chatbotName = window.ChatbotData.chatbotName ? window.ChatbotData.chatbotName : "Chatbot";
   let chatBotMessage;
-  let wMessage = window.ChatbotData.welcomeMessage ? window.ChatbotData.welcomeMessage : "";
+
   console.log('messages:', messages);
   if(assistants.length === 0) {
-    chatBotMessage = createChatBotMessage("No assistants available");
+    chatBotMessage = useMemo(() => createChatBotMessage("No assistants available"), []);
   } else if(assistants.length === 1) {
-    chatBotMessage = createChatBotMessage(wMessage);
+    chatBotMessage = useMemo(() => createChatBotMessage(wMessage), []);
     console.log('assistants:', assistants);	
   } else {	
-    chatBotMessage = createChatBotMessage(wMessage,
+    chatBotMessage = useMemo(() => createChatBotMessage(wMessage,
     {
       widget: "overview",
       delay: null,
       loading: true
-    });
+    }), []);
   }
 
+  const saveMessages = (messages, HTMLString) => {                        
+    setMessages(messages); 
+  };
 
+  let messageAlreadyExists = messages.some(message => message.id === chatBotMessage.id); //works because of the useMemo. Otherwise id were different
+  let initialMessages = messages;
+  if(!messageAlreadyExists) {
+    initialMessages = [...messages, chatBotMessage]; 
+  }
 
-  console.log('messageHistory:', messageHistory);
-
-  const updatedConfig = {
+  const updatedConfig = useMemo(() => {
+    return {
       ...config,
-      initialMessages: [...messages, chatBotMessage],
+      initialMessages: initialMessages,
       botName: chatbotName,
       state : {
         assistants:  assistants ? assistants : [],
         selectedAssistant: assistants && assistants.length === 1 ? assistants[0].id : "",
       }
-  };
+  }}, [saveMessages]);
 
   const toggleChatbot = () => {
       setIsChatbotOpen(!isChatbotOpen);
@@ -82,12 +89,6 @@ const VideoAiChatbot = () => {
       return true;
     return false
   }
-
-  const saveMessages = (messages, HTMLString) => {                        
-    console.log('messages:', messages);
-    console.log('HTMLText:', HTMLString); 
-    setMessages(messages); 
-  };
 
   return (
     <>

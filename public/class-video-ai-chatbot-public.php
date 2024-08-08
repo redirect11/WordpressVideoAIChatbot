@@ -123,9 +123,9 @@ class Video_Ai_Chatbot_Public {
 
 		//wp_enqueue_script( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'js/video-ai-chatbot-public.js', array( 'jquery' ), $this->version, false );
 		$options = get_option('video_ai_chatbot_options');
-		if (!empty($options['video_ai_enable_chatbot_field'])) {
+		if (isset($options) && !empty($options['video_ai_enable_chatbot_field'])) {
 			if (!$this->openai->is_active()) {
-				$api_key = get_option('video_ai_chatbot_options')['openai_api_key_field'];
+				$api_key = isset($options['openai_api_key_field']) ? $options['openai_api_key_field'] : null;
 				if (!$api_key) {
 					echo '<p>Please configure your OpenAI API key in the settings.</p>';
 					return;
@@ -136,10 +136,11 @@ class Video_Ai_Chatbot_Public {
 			wp_enqueue_script('font-awesome', 'https://kit.fontawesome.com/24d02441cf.js', array(), null, true); //todo security
 			$welcome_message = get_option('video_ai_chatbot_options')['video_ai_chatbot_welcome_message_field'];
 			if (empty($welcome_message)) {
-				$welcome_message = 'Hello! How can I help you today?';
+				$welcome_message = 'Ciao, come posso aiutarti?';
 			}
-			$assistants = $this->openai->get_assistants_request();
-			$messages = $this->openai->get_thread_messages_request();
+			$assistants = $this->openai->get_filtered_assistants_request();
+			$messages = $this->openai->get_current_user_thread_message_request();
+			error_log('Messages: ' . json_encode($messages));
 			$chatbot_name = get_option('video_ai_chatbot_options')['video_ai_chatbot_name_field'];
 			$user_id = apply_filters('determine_current_user', true);
 			$user_display_name = '';

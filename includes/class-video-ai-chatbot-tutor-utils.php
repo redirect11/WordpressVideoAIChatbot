@@ -9957,4 +9957,383 @@ class TutorUtils {
 		return (object) json_decode( $response['body'], true );
 	}
 
+
+
+	public function get_products_with_courses() {
+		$products_courses_map = $this->get_products_courses_map();
+		$products_with_courses = array();
+	
+		foreach ($products_courses_map as $map_item) {
+			//error_log('map_item: ' . print_r($map_item, true));
+			$product_id = $map_item['productId'];
+			$course_id = $map_item['courseId'];
+
+			if(!$product_id || !$course_id) {
+				continue;
+			}
+	
+			// Ottieni i dettagli del corso
+			$course_details = $this->course_detail($course_id);
+	
+			// Ottieni i contenuti del corso
+			$course_contents = $this->course_contents($course_id);
+	
+			// Ottieni il prodotto
+			$product = $this->get_wc_product_full_info($product_id);
+	
+			// Aggiungi i dettagli e i contenuti del corso al prodotto
+			$product['product_link'] = get_permalink($product_id);
+			$product['course'] = $this->get_single_course($course_id);
+			$product['course']->permalink = get_permalink($course_id);
+			$product['course_details'] = $course_details;
+			$product['contents'] = $course_contents;
+
+			// error_log('product: ' . print_r($product, true));
+			// error_log('course_details: ' . json_encode($product['course']));
+	
+			// Aggiungi il prodotto con i dettagli del corso all'array
+			$products_with_courses[] = $product;
+		}
+	
+		return $products_with_courses;
+	}
+
+
+
+/**
+ * Ottiene le informazioni complete di un singolo prodotto acquistabile su WooCommerce
+ *
+ * @param int $product_id ID del prodotto
+ * @return array|false Informazioni del prodotto o false se il prodotto non è acquistabile o non esiste
+ */
+public function get_wc_product_full_info($product_id) {
+    // Assicurati che WooCommerce sia attivo
+    if ( ! in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
+        error_log('WooCommerce is not active');
+        return false;
+    }
+
+    // Ottieni il prodotto
+    $product = get_post($product_id);
+    if (!$product || $product->post_type !== 'product' || $product->post_status !== 'publish') {
+        return false;
+    }
+
+    $product_obj = wc_get_product($product_id);
+    if (!$product_obj->is_purchasable()) {
+        return false;
+    }
+
+    // Ottieni le informazioni complete del prodotto
+    $product_info = array(
+        'id' => $product->ID,
+        'name' => $product->post_title,
+        'description' => $product->post_content,
+        'short_description' => $product->post_excerpt,
+        'price' => $product_obj->get_price(),
+        'regular_price' => $product_obj->get_regular_price(),
+        'sale_price' => $product_obj->get_sale_price(),
+        'sku' => $product_obj->get_sku(),
+        'stock_status' => $product_obj->get_stock_status(),
+        'image_url' => wp_get_attachment_url($product_obj->get_image_id()),
+        'categories' => wp_get_post_terms($product->ID, 'product_cat', array('fields' => 'names')),
+        'tags' => wp_get_post_terms($product->ID, 'product_tag', array('fields' => 'names'))
+    );
+
+    return $product_info;
+}
+
+public function get_single_course($course_id) {
+    $post_type = apply_filters('tutor_course_post_type', 'courses');
+
+    // Ottieni il corso
+    $args = array(
+        'post_type' => $post_type,
+        'post_status' => 'publish',
+        'p' => $course_id,
+    );
+
+    $args = apply_filters('tutor_rest_course_query_args', $args);
+
+    $query = new WP_Query($args);
+
+    // Se il corso è trovato
+    if (count($query->posts) > 0) {
+        $post = $query->posts[0];
+
+        // Rimuovi la proprietà filter
+        unset($post->filter);
+
+        $category = wp_get_post_terms($post->ID, $this->course_cat_tax);
+        $tag = wp_get_post_terms($post->ID, $this->course_tag_tax);
+        $author = get_userdata($post->post_author);
+
+        if ($author) {
+            // Rimuovi user pass & key
+            unset($author->data->user_pass);
+            unset($author->data->user_activation_key);
+        }
+
+        is_a($author, 'WP_User') ? $post->post_author = $author->data : new \stdClass();
+
+        $thumbnail_size = apply_filters('tutor_rest_course_thumbnail_size', 'post-thumbnail');
+        $post->thumbnail_url = get_the_post_thumbnail_url($post->ID, $thumbnail_size);
+
+        $post->additional_info = $this->course_additional_info($post->ID);
+        $post->ratings = tutor_utils()->get_course_rating($post->ID);
+        $post->course_category = $category;
+        $post->course_tag = $tag;
+        $post->price = get_post_meta($post->ID, '_regular_price', true);
+
+        $post = apply_filters('tutor_rest_course_single_post', $post);
+
+        return $post;
+    }
+
+    return null;
+}
+
+	public function course( $paged = 0 ) {
+
+		$post_type = apply_filters( 'tutor_course_post_type', 'courses' );
+		$post_per_page = tutor_utils()->get_option( 'pagination_per_page' );
+
+		$args = array(
+			'post_type'      => $post_type,
+			'post_status'    => 'publish',
+			'posts_per_page' => -1,
+			'paged'          => $paged ? $paged : 1,
+			'order'          => 'ASC',
+			'orderby'        => 'title',
+		);
+
+
+
+		$args = apply_filters( 'tutor_rest_course_query_args', $args );
+
+		$query = new WP_Query( $args );
+
+		// if post found.
+		if ( count( $query->posts ) > 0 ) {
+			// unset filter property.
+			array_map(
+				function ( $post ) {
+					unset( $post->filter );
+				},
+				$query->posts
+			);
+
+			$data = array(
+				'posts'        => array(),
+				'total_course' => $query->found_posts,
+				'total_page'   => $query->max_num_pages,
+			);
+
+			foreach ( $query->posts as $post ) {
+				$category = wp_get_post_terms( $post->ID, $this->course_cat_tax );
+
+				$tag = wp_get_post_terms( $post->ID, $this->course_tag_tax );
+
+				$author = get_userdata( $post->post_author );
+
+				if ( $author ) {
+					// Unset user pass & key.
+					unset( $author->data->user_pass );
+					unset( $author->data->user_activation_key );
+				}
+
+				is_a( $author, 'WP_User' ) ? $post->post_author = $author->data : new \stdClass();
+
+				$thumbnail_size      = apply_filters( 'tutor_rest_course_thumbnail_size', 'post-thumbnail' );
+				$post->thumbnail_url = get_the_post_thumbnail_url( $post->ID, $thumbnail_size );
+
+				$post->additional_info = $this->course_additional_info( $post->ID );
+
+				$post->ratings = tutor_utils()->get_course_rating( $post->ID );
+
+				$post->course_category = $category;
+
+				$post->course_tag = $tag;
+
+				$post->price = get_post_meta( $post->ID, '_regular_price', true );
+
+				$post = apply_filters( 'tutor_rest_course_single_post', $post );
+
+				array_push( $data['posts'], $post );
+			}
+
+			// $response = array(
+			// 	'code'    => 'success',
+			// 	'message' => __( 'Course retrieved successfully', 'tutor' ),
+			// 	'data'    => $data,
+			// );
+
+			return $data;
+		}
+
+		// $response = array(
+		// 	'code'    => 'not_found',
+		// 	'message' => __( 'Course not found', 'tutor' ),
+		// 	'data'    => array(),
+		// );
+
+		return array();
+	}
+
+	/**
+	 * Course Details API handler
+	 *
+	 * @since 1.7.1
+	 *
+	 * @param WP_REST_Request $request request params.
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function course_detail( $post_id) {
+
+		$detail = $this->course_additional_info( $post_id );
+		if ( $detail ) {
+			return $detail;
+		}
+		
+		return array();
+	}
+
+	/**
+	 * Get course additional info
+	 *
+	 * @since 2.6.1
+	 *
+	 * @param integer $post_id post id.
+	 *
+	 * @return array
+	 */
+	public function course_additional_info( int $post_id ) {
+		$detail = array(
+
+			'course_settings'          => get_post_meta( $post_id, '_tutor_course_settings', false ),
+
+			'course_price_type'        => get_post_meta( $post_id, '_tutor_course_price_type', false ),
+
+			'course_duration'          => get_post_meta( $post_id, '_course_duration', false ),
+
+			'course_level'             => get_post_meta( $post_id, '_tutor_course_level', false ),
+
+			'course_benefits'          => get_post_meta( $post_id, '_tutor_course_benefits', false ),
+
+			'course_requirements'      => get_post_meta( $post_id, '_tutor_course_requirements', false ),
+
+			'course_target_audience'   => get_post_meta( $post_id, '_tutor_course_target_audience', false ),
+
+			'course_material_includes' => get_post_meta( $post_id, '_tutor_course_material_includes', false ),
+
+			'video'                    => get_post_meta( $post_id, '_video', false ),
+
+			'disable_qa'               => get_post_meta( $post_id, '_tutor_enable_qa', true ) != 'yes',
+		);
+
+		return apply_filters( 'tutor_course_additional_info', $detail );
+	}
+
+
+
+	/**
+	 * Retrieve the course contents for a given course id
+	 *
+	 * @since 2.7.0
+	 *
+	 * @param WP_REST_Request $request request params.
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function course_contents( $course_id ) {
+		$topics    = $this->get_topics( $course_id );
+
+		if ( $topics->have_posts() ) {
+			$data = array();
+			foreach ( $topics->get_posts() as $post ) {
+				$current_topic = array(
+					'id'       => $post->ID,
+					'title'    => $post->post_title,
+					'summary'  => $post->post_content,
+					'contents' => array(),
+				);
+
+				$topic_contents = $this->get_course_contents_by_topic( $post->ID, -1 );
+
+				if ( $topic_contents->have_posts() ) {
+					foreach ( $topic_contents->get_posts() as $post ) {
+						array_push( $current_topic['contents'], $post );
+					}
+				}
+
+				array_push( $data, $current_topic );
+			}
+
+			return $data;
+		}
+
+		return array();
+	}
+
+
+	// Codice da aggiungere a tutor-utils.php
+
+public function get_products_courses_map() {
+	$products_courses_map = array();
+	
+	// Ottenere tutti i prodotti di WooCommerce
+	$args = array(
+		'post_type' => 'course',
+		'posts_per_page' => -1
+	);
+
+	$courses = $this->course();
+
+	if(!$courses || !isset($courses['posts'])) {
+		return $products_courses_map;
+	}
+
+	// Cicla attraverso ciascun prodotto
+	foreach ($courses['posts'] as $course) {
+		//error_log('course: ' . print_r($course, true));
+		$course_id = $course->ID;
+		// Ottieni l'ID del corso dal prodotto usando la funzione identificata
+		$product_id = get_field('corso_woocommerce_prodotto', $course_id);
+		// Costruisci l'oggetto con i dati del corso e del prodotto
+		if($course_id && $product_id && is_array($product_id) && count($product_id) > 0) {
+			$map_item = array(
+				'courseId' => $course_id,
+				'productId' => $product_id[0]
+			);
+			// Aggiungi l'oggetto all'array
+			$products_courses_map[] = $map_item;
+		}
+	}
+	error_log('count products_courses_map: ' . count($products_courses_map));
+	return $products_courses_map;
+}
+
+/**
+ * Function to get post ID by meta key and value
+ * 
+ * @param string $meta_key
+ * @param mixed $meta_value
+ * @return int|null
+ */
+private function get_post_id_by_meta_key_and_value($meta_key, $meta_value) {
+    global $wpdb;
+    $query = $wpdb->prepare("
+        SELECT post_id
+        FROM $wpdb->postmeta
+        WHERE meta_key = %s
+        AND meta_value = %s
+        LIMIT 1
+    ", $meta_key, $meta_value);
+
+    $result = $wpdb->get_var($query);
+    return ($result !== null) ? (int) $result : null;
+}
+
+
 }

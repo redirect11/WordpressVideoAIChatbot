@@ -139,7 +139,6 @@ class Video_Ai_Chatbot {
 		$this->loader = new Video_Ai_Chatbot_Loader();
 		$this->communityopenai = new Video_Ai_Community_OpenAi();
 		$this->openai = new Video_Ai_OpenAi($this->communityopenai);
-		$this->wa_webhooks = new Video_Ai_Chatbot_Wa_Webhooks($this->openai);
 	}
 
 	/**
@@ -168,7 +167,7 @@ class Video_Ai_Chatbot {
 	 */
 	private function define_admin_hooks() {
 
-		$plugin_admin = new Video_Ai_Chatbot_Admin( $this->get_plugin_name(), $this->get_version(), $this->openai, $this->wa_webhooks );
+		$plugin_admin = new Video_Ai_Chatbot_Admin( $this->get_plugin_name(), $this->get_version(), $this->openai );
 		$this->loader->add_action( 'admin_init', $plugin_admin, 'openai_assistant_settings_init');
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'openai_assistant_admin_menu' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_styles' );
@@ -176,8 +175,8 @@ class Video_Ai_Chatbot {
 		$this->loader->add_action( 'wp_ajax_openai_cancel_thread_options', $plugin_admin, 'delete_thread' );
 		$this->loader->add_action( 'wp_ajax_openai_delete_files_data_options', $plugin_admin, 'delete_file_data' );
 		$this->loader->add_action('rest_api_init', $this->openai, 'register_api_hooks');
-		$this->loader->add_action('rest_api_init', $this->communityopenai, 'register_api_hooks');
-		$this->loader->add_action('rest_api_init', $this->wa_webhooks, 'register_api_hooks');
+		$this->loader->add_action('rest_api_init', $this->communityopenai, 'register_api_hooks');			
+		$this->loader->add_action( 'rest_api_init', $this, 'my_customize_rest_cors', 15 );
 	}
 
 	/**
@@ -239,4 +238,16 @@ class Video_Ai_Chatbot {
 		return $this->version;
 	}
 
+
+	public function my_customize_rest_cors() {
+		remove_filter( 'rest_pre_serve_request', 'rest_send_cors_headers' );
+		add_filter( 'rest_pre_serve_request', function( $value ) {
+		header( 'Access-Control-Allow-Origin: *' );
+		header( 'Access-Control-Allow-Methods: GET,HEAD,OPTIONS,POST,PUT' );
+		header( 'Access-Control-Allow-Credentials: true' );
+		header( 'Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization' );
+		header( 'Access-Control-Expose-Headers: Link', false );
+		return $value;
+		} );
+	}
 }
