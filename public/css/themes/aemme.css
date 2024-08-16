@@ -7,12 +7,12 @@
     --secondary-bg-gradient: linear-gradient(180deg, #c2b29f 0%, #8d672e 100%);
     --secondary-bg-color: #262626; /* Slightly lighter dark color */
     --highlight-color: #a1722b; /* Gold color for highlights */
-    --text-color: #ffffff; /* Light text color */
+    --chatbot-text-color: #ffffff; /* Light text color */
     --button-bg-color: #ecdcc4; /* Gold color for buttons */
     --button-bg-gradient: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%); /* Gradient color for buttons */
     --button-hover-bg-gradient: linear-gradient(180deg, #cec1ad 0%, #ccae89 100%); /* Darker gold for hover state */
     --input-bg-color: #333333; /* Dark background for input fields */
-    --input-text-color: #ffffff; /* Light text color for input fields */
+    --chatbot-input-text-color: #ffffff; /* Light text color for input fields */
     --avatar-bg-gradient: linear-gradient(180deg, #EDDBC2 0%, #C6B7A3CC 100%); /* Gradient for avatar background */
     --border-color: #ecdcc4c0; /* Border color */
 }
@@ -23,7 +23,7 @@
 	border: 1px solid var(--border-color);
 	border-radius: 10px;
 	font-family: 'Roboto', sans-serif;
-	color: var(--text-color);
+	color: var(--chatbot-text-color);
      box-sizing: unset;
 }
 
@@ -37,15 +37,15 @@
 
 
 .chatbot-custom-theme .react-chatbot-kit-chat-header {
-	background-image: var(--main-bg-gradient);
-	background-color: var(--secondary-bg-color);
+	/* background-image: var(--main-bg-gradient);
+	background-color: var(--secondary-bg-color); */
 	border-bottom: 1px solid var(--border-color);
 	padding: 15px;
 	border-top-left-radius: 8px;
 	border-top-right-radius: 8px;
 	font-size: 1rem;
 	font-weight: bold;
-	color: var(--text-color);
+	color: var(--chatbot-text-color);
 	margin-bottom: 6px;
 	box-shadow: 0 4px 10px rgba(209, 208, 139, 0.5);
 	position: relative;
@@ -74,7 +74,7 @@
 	background-color: var(--secondary-bg-color);
 	padding: 10px;
 	/* padding-bottom: 10px; */
-	bottom: 10px;
+	bottom: 7px;
 	position: relative;
 	height: 400px;
 }
@@ -86,7 +86,7 @@
     padding: 10px;
     margin-right: 10px;
     background-color: var(--input-bg-color);
-    color: var(--input-text-color);
+    color: var(--chatbot-input-text-color);
 }
 
 .chatbot-custom-theme .react-chatbot-kit-chat-input-form {
@@ -102,7 +102,7 @@
     background-color: var(--button-bg-color);
     background-image: var(--button-bg-gradient);
     border: none;
-    color: var(--text-color);
+    color: var(--chatbot-text-color);
     padding: 10px 15px;
     border-radius: 4px;
     cursor: pointer;
@@ -115,7 +115,7 @@
 }
 
 .chatbot-custom-theme .react-chatbot-kit-chat-btn-send-icon {
-    fill: var(--text-color);
+    fill: var(--chatbot-text-color);
 }
 
 .chatbot-custom-theme .react-chatbot-kit-chat-bot-avatar-container {
@@ -134,7 +134,7 @@
 }
 
 .chatbot-custom-theme .react-chatbot-kit-chat-bot-avatar-letter {
-    color: var(--text-color);
+    color: var(--chatbot-text-color);
     font-size: 1.2rem;
 }
 
@@ -144,7 +144,7 @@
     padding: 10px;
     border-radius: 8px;
     font-size: 0.9rem;
-    color: var(--text-color);
+    color: var(--chatbot-text-color);
     font-weight: 500;
     position: relative;
     margin: 10px 0;
@@ -170,7 +170,7 @@
     right: 20px;
     font-size: 24px;
     cursor: pointer;
-    color: var(--text-color);
+    color: var(--chatbot-text-color);
     z-index: 1000;
     padding: 10px 15px;
     border-radius: 50%;
@@ -217,7 +217,7 @@
     padding: 10px;
     border-radius: 8px;
     font-size: 0.9rem;
-    color: var(--text-color);
+    color: var(--chatbot-text-color);
     font-weight: 500;
     position: relative;
     margin-top: 0px;

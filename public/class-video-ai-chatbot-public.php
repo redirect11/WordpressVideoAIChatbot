@@ -138,9 +138,8 @@ class Video_Ai_Chatbot_Public {
 			if (empty($welcome_message)) {
 				$welcome_message = 'Ciao, come posso aiutarti?';
 			}
-			$assistants = $this->openai->get_filtered_assistants_request();
-			$messages = $this->openai->get_current_user_thread_message_request();
-			error_log('Messages: ' . json_encode($messages));
+			$assistants = $this->openai->get_filtered_assistants();
+			$messages = $this->openai->get_current_user_thread_message();
 			$chatbot_name = get_option('video_ai_chatbot_options')['video_ai_chatbot_name_field'];
 			$user_id = apply_filters('determine_current_user', true);
 			$user_display_name = '';

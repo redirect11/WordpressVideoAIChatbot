@@ -69,39 +69,63 @@ class Video_Ai_Community_OpenAi {
 
     public function createVectorStoreFiles($vectorStoreId, $files)
     {
-        error_log('files: ' . json_encode($files));
+        error_log('createVectorStoreFiles files: ' . json_encode($files));
+        error_log('createVectorStoreFiles vectorStoreId: ' . $vectorStoreId);
         if($this->is_active()) {
             if(count($files) > 1) {
-                $response = $this->client->vectorStores()->batches()->create(
-                    vectorStoreId: $vectorStoreId,
-                    parameters: [
-                        'file_ids' => $files,
-                    ]
-                );
-                while($response->status == 'processing') {
-                    sleep(1);
-                    $response = $this->client->vectorStores()->files()->retrieve(
+                try{ 
+                    $response = $this->client->vectorStores()->batches()->create(
                         vectorStoreId: $vectorStoreId,
-                        fileBatchId: $response->id,
+                        parameters: [
+                            'file_ids' => $files,
+                        ]
                     );
+                } catch (Exception $e) {
+                    error_log('createVectorStoreFiles error: ' . json_encode($e). ' ' . $e->getMessage(). 'response: ' . json_encode($response));
+                    throw new Exception('Failed to create vector store files: '. json_encode($e));
                 }
-                // $response = $this->client->vectorStores()->files()->list(
-                //     vectorStoreId: $vectorStoreId,
-                //     parameters: [
-                //         'limit' => 10,
-                //     ],
-                // );
-                // foreach ($response->data as $result) {
-                //     $result->id; // 'file-fUU0hFRuQ1GzhOweTNeJlCXG'
-                // }
-            } else {
-                $response = $this->client->vectorStores()->files()->create(
-                    vectorStoreId: $vectorStoreId,
-                    parameters: [
-                        'file_id' => $files[0],
-                    ]
-                );
 
+                error_log('createVectorStoreFiles response: ' . json_encode($response));
+
+                while($response->status == 'processing' || $response->status == 'in_progress') {
+                    sleep(1);
+                    try{
+                        $response = $this->client->vectorStores()->batches()->retrieve(
+                            vectorStoreId: $vectorStoreId,
+                            fileBatchId: $response->id,
+                        );
+                    } catch (Exception $e) {
+                        error_log('createVectorStoreFiles error: ' . json_encode($e));
+                        throw new Exception('Failed to create vector store files: '. json_encode($e));
+                    }
+                }
+                error_log('createVectorStoreFiles response end: ' . json_encode($response));
+            } else {
+                try{
+                    $response = $this->client->vectorStores()->files()->create(
+                        vectorStoreId: $vectorStoreId,
+                        parameters: [
+                            'file_id' => $files[0],
+                        ]
+                    );
+                } catch (Exception $e) {
+                    error_log('createVectorStoreFiles error: ' . json_encode($e));
+                    throw new Exception('Failed to create vector store files: '. json_encode($e));
+                }
+
+                while($response->status == 'processing' || $response->status == 'in_progress') {
+                    sleep(1);
+                    try{
+                        $response = $this->client->vectorStores()->files()->retrieve(
+                            vectorStoreId: $vectorStoreId,
+                            fileId: $files[0],
+                        );
+                    } catch (Exception $e) {
+                        error_log('createVectorStoreFiles error: ' . json_encode($e));
+                        throw new Exception('Failed to create vector store files: '. json_encode($e));
+                    }
+                }
+                error_log('createVectorStoreFiles response: ' . json_encode($response));
             }
 
             if (isset($response->id)) {
@@ -144,7 +168,6 @@ class Video_Ai_Community_OpenAi {
     {
         if($this->is_active()) {
             $response = $this->client->assistants()->retrieve($assistantId);
-            error_log('response: ' . json_encode($response));
             if (isset($response) && isset($response->toolResources->fileSearch->vectorStoreIds)) {
                 $vector_store_ids = $response->toolResources->fileSearch->vectorStoreIds;
                 if (isset($vector_store_ids)) {

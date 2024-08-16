@@ -417,7 +417,7 @@ class Video_Ai_Chatbot_Admin {
 		// if(!$this->wa->is_active()) {
 		// 	$this->wa->activate($wa_apy_key, $wa_phone_id, $wa_assistant_id);
 		// }
-		$assistants = $this->openai->get_assistants_request();
+		$assistants = $this->openai->get_assistants();
 		$transcriptions = $this->get_local_transcriptions();
 		wp_localize_script('openai-assistant-admin-react', 'adminData', array('assistants' => $assistants, 'transcriptions' => $transcriptions, 'nonce' => $nonce));
 		wp_localize_script('openai-create-assistant-admin-react', 'adminData', array('assistants' => $assistants, 'transcriptions' => $transcriptions, 'nonce' => $nonce));

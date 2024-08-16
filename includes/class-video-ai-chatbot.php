@@ -61,6 +61,7 @@ class Video_Ai_Chatbot {
 	private $openai;
 	private $communityopenai;
 	private $wa_webhooks;
+	private $api;
 
 	/**
 	 * Define the core functionality of the plugin.
@@ -136,9 +137,12 @@ class Video_Ai_Chatbot {
 
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-tutor-utils.php';
 
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-api.php';
+
 		$this->loader = new Video_Ai_Chatbot_Loader();
 		$this->communityopenai = new Video_Ai_Community_OpenAi();
 		$this->openai = new Video_Ai_OpenAi($this->communityopenai);
+		$this->api = new Video_Ai_Chatbot_Api($this->openai);
 	}
 
 	/**
@@ -174,7 +178,7 @@ class Video_Ai_Chatbot {
 		$this->loader->add_action( 'admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts' );
 		$this->loader->add_action( 'wp_ajax_openai_cancel_thread_options', $plugin_admin, 'delete_thread' );
 		$this->loader->add_action( 'wp_ajax_openai_delete_files_data_options', $plugin_admin, 'delete_file_data' );
-		$this->loader->add_action('rest_api_init', $this->openai, 'register_api_hooks');
+		$this->loader->add_action('rest_api_init', $this->api, 'register_api_hooks');
 		$this->loader->add_action('rest_api_init', $this->communityopenai, 'register_api_hooks');			
 		$this->loader->add_action( 'rest_api_init', $this, 'my_customize_rest_cors', 15 );
 	}

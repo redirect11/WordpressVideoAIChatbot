@@ -16,13 +16,11 @@ class Video_Ai_Chatbot_Wa_Webhooks {
 	 * @param      string    $version    The version of this plugin.
 	 */
 	public function __construct($openai, $token, $phone_id, $assistantId) {
-        error_log("Constructing wa webhooks");
         $this->openai = $openai;
         $this->token = $token;
         $this->phone_id = $phone_id;
         $this->assistantId = $assistantId;
         if($token && $phone_id && $assistantId) {
-            error_log("Phone ID: " . $this->phone_id);
             add_action('rest_api_init', [$this, 'register_api_hooks']);
             $this->activate($token, $phone_id, $assistantId);
         }
@@ -43,18 +41,14 @@ class Video_Ai_Chatbot_Wa_Webhooks {
     public function activate($token, $phone_id, $assistantId)
     {
         if(!$this->is_active() && $token && $phone_id && $assistantId) {
-            error_log('Activating wa webhooks');
             $this->token = $token;
             $this->phone_id = $phone_id;
             $this->assistantId = $assistantId;
-            error_log("Phone ID: " . $this->phone_id);
         }
     }
   
     public function register_api_hooks() {
         // Registra l'endpoint per le richieste POST
-        error_log("Registering API hooks");
-        error_log("Phone ID: " . $this->phone_id);
 
         register_rest_route('video-ai-chatbot/v1/' . $this->phone_id, '/webhook/', [
             'methods' => 'POST',
@@ -97,6 +91,15 @@ class Video_Ai_Chatbot_Wa_Webhooks {
             return new WP_REST_Response(['message' => 'Error terminating handover'], 400);
         }
         return new WP_REST_Response(['message' => 'Handover Terminated'], 200);
+    }
+
+    private function generateKey($token) {
+        $hash = 0;
+        for ($i = 0; $i < strlen($token); $i++) {
+            $hash = ($hash << 5) - $hash + ord($token[$i]);
+            $hash = $hash & 0xFFFFFFFF; // Convert to 32bit integer
+        }
+        return str_pad(substr(abs($hash), 0, 5), 5, '0', STR_PAD_LEFT);
     }
 
     //funzione per handover_message
@@ -231,7 +234,7 @@ class Video_Ai_Chatbot_Wa_Webhooks {
         error_log("Body: " . json_encode($params, JSON_PRETTY_PRINT));
     
         if ($mode && $token) {
-            if ($mode === 'subscribe' && $token === '12345') {
+            if ($mode === 'subscribe' && $token === $this->generateKey($this->token)) {
                 error_log("WEBHOOK_VERIFIED");
                 $intChallenge = (int)$challenge;
                 return new WP_REST_Response($intChallenge, 200);
