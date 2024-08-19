@@ -9,6 +9,7 @@ class Video_Ai_OpenAi {
     private $communityopenai;
     private $tutorUtils;
     private $wa = [];
+    private $ig = [];
 
     /**
 	 * Initialize the class and set its properties.
@@ -33,6 +34,12 @@ class Video_Ai_OpenAi {
             if(isset($waAssistants) && count($waAssistants) > 0) {
                 foreach($waAssistants as $assistant) {
                     $this->wa[$assistant['assistant']] = new Video_Ai_Chatbot_Wa_Webhooks($this, $assistant['token'], $assistant['outgoingNumberId'], $assistant['assistant']);
+                }
+            }
+            $igAssistants = get_option('video_ai_instagram_assistants', array());
+            if(isset($igAssistants) && count($igAssistants) > 0) {
+                foreach($igAssistants as $assistant) {
+                    $this->ig[$assistant['assistant']] = new Video_Ai_Chatbot_Instagram($this, $assistant['token'], $assistant['instagramId'], $assistant['assistant']);
                 }
             }
         }
@@ -73,6 +80,16 @@ class Video_Ai_OpenAi {
         return false;
     }
 
+    public function is_ig_thread($thread_id) {
+        $thread = $this->client->retrieveThread($thread_id);
+        $thread = json_decode($thread, true);
+        if(isset($thread['metadata']['ig'])) {
+            error_log('is_ig_thread thread is instagram');
+            return true;
+        }
+        return false;
+    }
+
 
     private function get_assistant_name_from_assistant_id($assistantId) {
         $assistants = $this->get_assistants();
@@ -87,15 +104,7 @@ class Video_Ai_OpenAi {
     public function get_file($vectorStoreId) {
         //retrieve file from local get_all_options
         $openAiFiles = $this->communityopenai->retrieveVectorStoreFiles($vectorStoreId);
-        error_log('get_file openAiFiles: ' . json_encode($openAiFiles));
         $savedFiles = get_option('video_ai_chatbot_files', []);
-        array_map(function($file) {
-            if(isset($file)) {
-                error_log('get_file savedFiles: ' . $file['vector_store_id']);
-                error_log('get_file id' . $file['id']);
-            }
-            return $file;
-        }, $savedFiles);
         $foundFile = null;
         //search for the only file present in the vector store that is saved in video_ai_chatbot_files
         foreach($savedFiles as $savedFile) {
@@ -116,36 +125,145 @@ class Video_Ai_OpenAi {
         return $response;
     }
 
+    private function get_all_registered_user_threads() {
+        $users = get_users();
+        $allThreads = [];
+        foreach ($users as $user) {
+            $user_id = $user->ID;
+            $userThreads =  get_user_meta($user_id, 'openai_thread_id', true);
+            
+            foreach ($userThreads as $assistantId => $threadId) {
+                $thread = $this->client->retrieveThread($threadId);
+                $thread = json_decode($thread, true);
+                $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
+                $allThreads[] = [
+                    'thread_id' => $threadId,
+                    'assistant_id' => $assistantId,
+                    'user_id' => $user_id,
+                    'userName' => $user->user_login,
+                    'assistant_name' => $this->get_assistant_name_from_assistant_id($assistantId),
+                    'messages' => [],
+
+                ];
+            }
+        }
+        $threadsToSend = [];
+        foreach ($allThreads as $thread) {
+            $query = ['limit' => 50];
+            try {
+                $messages = $this->client->listThreadMessages($thread['thread_id'], $query);
+                $messages = json_decode($messages, true);
+                //check if metadata is set and contains handover 
+                $messages = $messages['data'];
+                $remappedMessages = array_map(function($entry) {
+                    return [
+                        'sender' => $entry['role'],
+                        'text' => $entry['content'][0]['text']['value'],
+                        'timestamp' => $entry['created_at'],
+                        'handover_message' => isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true",
+                        'type' => isset($entry['metadata']) && isset($entry['metadata']['wa']) ? 
+                                    'wa' 
+                                    : (isset($entry['metadata']) && isset($entry['metadata']['ig']) ? 'ig' : 'chat')
+                    ];
+                }, $messages);
+                usort($remappedMessages, function($a, $b) {
+                    return $b['timestamp'] < $a['timestamp'] ? 1 : -1;
+                });
+                $thread['messages'] = $remappedMessages;
+                $threadsToSend[] = $thread;
+            } catch (Exception $e) {
+                error_log('Error getting messages for thread ' . $thread['thread_id'] . ' for user ' . $thread['user_id'] . ': ' . $e->getMessage());
+            }
+        }
+        return new WP_REST_Response($threadsToSend, 200);
+    }
+
     //implementa la funzione get_all_thread_messages
     public function get_all_thread_messages() {
         // Cicla tutti gli utenti per ottenere i thread degli utenti
         $users = get_users();
         $allThreads = [];
+        foreach($users as $user) {
+            $user_id = $user->ID;
+            $userThreads =  get_user_meta($user_id, 'openai_thread_id', true);
+            $userThreads = json_decode($userThreads, true);
+            //$userThreads = json_decode($userThreads, true);
+            foreach($userThreads as $assistantId => $threadId) {
+                $thread = $this->client->retrieveThread($threadId);
+                $thread = json_decode($thread, true);
+                $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
+                $allThreads[] = [
+                    'thread_id' => $threadId,
+                    'assistant_id' => $assistantId,
+                    'user_id' => $user_id,
+                    'userName' => $user->user_login,
+                    'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
+                    'messages' => [],
+                    'is_handover_thread' => $is_handover_thread,
+                    'type' => 'chat'
+                ];
+            }
+        }
+
     
         // Ottieni i thread delle sessioni
         $waAssistants = get_option('video_ai_whatsapp_assistants', []);
+        $igAssistants = get_option('video_ai_instagram_assistants', []);
 
         $sessionsThreads = get_option('video_ai_chatbot_threads', []);
         if (isset($sessionsThreads)) {
             foreach ($sessionsThreads as $sessionId => $session) {
                 foreach ($session as $assistantId => $threadId) {
-                    $assistant = array_filter($waAssistants, function($assistant) use ($assistantId) {
+                    $waAssistant = array_filter($waAssistants, function($assistant) use ($assistantId) {
+                        return $assistant['assistant'] === $assistantId;
+                    });
+
+                    $igAssistant = array_filter($igAssistants, function($assistant) use ($assistantId) {
                         return $assistant['assistant'] === $assistantId;
                     });
                     
                     $thread = $this->client->retrieveThread($threadId);
                     $thread = json_decode($thread, true);
                     $is_wa_thread = isset($thread['metadata']['wa']);
+                    $is_ig_thread = isset($thread['metadata']['ig']);
+                    $is_anoymous_thread = !isset($thread['metadata']['wa']) && !isset($thread['metadata']['ig']);
                     $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
                     if($is_wa_thread) {
                         $allThreads[] = [
                             'thread_id' => $threadId,
-                            'assistantName' => $assistantId,
+                            'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
                             'user_id' => $sessionId,
                             'userName' => '+' . $sessionId,
-                            'outgoingNumberId' => $assistant[0]['outgoingNumberId'],
+                            'outgoingNumberId' => $waAssistant[0]['outgoingNumberId'],
                             'messages' => [],
-                            'is_handover_thread' => $is_handover_thread
+                            'is_handover_thread' => $is_handover_thread,
+                            'type' => 'wa'
+                        ];
+                    } else if($is_ig_thread) {
+                        $user_profile = $this->ig[$assistantId]->get_user_profile($sessionId); 
+                        error_log('get_all_thread_messages_request user_profile: ' . json_encode($user_profile));
+                        $allThreads[] = [
+                            'thread_id' => $threadId,
+                            'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
+                            'user_id' => $sessionId,
+                            'userName' => $sessionId,
+                            'instagramId' => $igAssistant[0]['instagramId'],
+                            'messages' => [],
+                            'is_handover_thread' => $is_handover_thread,
+                            'type' => 'ig',
+                            'user_profile' => $user_profile
+                        ];
+                    } 
+                    else if($is_anoymous_thread) {
+                        error_log('get_all_thread_messages_request is_anoymous_thread' . json_encode($thread));
+                        $allThreads[] = [
+                            'thread_id' => $threadId,
+                            'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
+                            'user_id' => $sessionId,
+                            'userName' => $sessionId,
+                            'messages' => [],
+                            'is_handover_thread' => $is_handover_thread,
+                            'type' => 'anon'
                         ];
                     }
                 }
@@ -159,16 +277,30 @@ class Video_Ai_OpenAi {
             try {
                 $messages = $this->client->listThreadMessages($thread['thread_id'], $query);
                 $messages = json_decode($messages, true);
+                if(isset($messages['error'])) {
+                    error_log('get_all_thread_messages_request error: ' . $messages['error']['message']);
+                    continue;
+                }
+
                 //check if metadata is set and contains handover 
                 $messages = $messages['data'];
-                $remappedMessages = array_map(function($entry) {
-                    error_log('get_all_thread_messages_request entry: ' . json_encode($entry));
-                    return [
+                $remappedMessages = array_map(function($entry) use ($thread) {
+                    $message = [
                         'sender' => $entry['role'],
                         'text' => $entry['content'][0]['text']['value'],
                         'timestamp' => $entry['created_at'],
-                        'handover_message' => isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true"
+                        'handover_message' => isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true",
+                        'type' => $thread['type']
                     ];
+
+                    if($message['type'] === 'wa') {
+                        $message['outgoingNumberId'] = $thread['outgoingNumberId'];
+                    } else if($message['type'] === 'ig') {
+                        $message['instagramId'] = $thread['instagramId'];
+                        //$message['sender']
+                    }
+
+                    return $message;
                 }, $messages);
                 usort($remappedMessages, function($a, $b) {
                     return $b['timestamp'] < $a['timestamp'] ? 1 : -1;
@@ -188,24 +320,57 @@ class Video_Ai_OpenAi {
             $user = wp_get_current_user();
             $user_id = isset($user->ID) ? $user->ID : null;
         }
+        $sessionId = isset($_COOKIE['video_ai_chatbot_session_id']) ? $_COOKIE['video_ai_chatbot_session_id'] : null;
+
 
         $assistant_id = $this->get_last_assistant_used_for_user($user_id);
-
-        error_log('get_current_user_thread_message assistant_id: ' . $assistant_id);
-
         if(!isset($assistant_id) || !$assistant_id) {
             return new WP_REST_Response(['message' => 'Assistant ID not found for current_user_thread'], 400);
         }
+
+        $thread_id = $this->get_thread_id_for_user($user_id, $sessionId, $assistant_id);
+        $thread = $this->client->retrieveThread($thread_id);
+        $thread = json_decode($thread, true);
+
         $messages = $this->get_thread_messages($assistant_id);
-        error_log('get_current_user_thread_message messages: ' . json_encode($messages));
         $messages = !is_array($messages) ? json_decode($messages, true) : $messages;    
+
+        if(isset($messages['error'])) {
+            return new WP_REST_Response(['message' => 'Thread not found'], 200);
+        }
+            
+        //leggi il campo created_at dell'ultimo messaggio e se è passato più di 15 minuti da allora, allora setta handover = "false"
+        $handover = false;
+        if( isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true") {
+            $handover = true;
+            $lastMessage = $messages['data'][0];
+            error_log('get_current_user_thread_message lastMessage: ' . json_encode($lastMessage));
+            $lastMessageCreatedAt = $lastMessage['created_at'];
+            $currentTime = time();
+            error_log('get_current_user_thread_message currentTime: ' . $currentTime);
+            error_log('get_current_user_thread_message lastMessageCreatedAt: ' . $lastMessageCreatedAt);
+            $diff = $currentTime - $lastMessageCreatedAt;
+            if($diff > 900) {
+                $this->set_thread_handover($thread_id, false);
+                $handover = false;
+            }
+        } 
 
         // Se non esiste un thread per l'utente corrente restituisci un errore
         if (!$messages) {
             return new WP_REST_Response(['message' => 'Thread not found'], 404);
         }
+        $threadData = [
+            'thread_id' => $thread_id,
+            'assistant_id' => $assistant_id,
+            'user_id' => isset($user_id) ? $user_id : $sessionId,
+            'userName' => isset($user->user_login) ? $user->user_login : $sessionId,
+            'assistant_name' => $this->get_assistant_name_from_assistant_id($assistant_id),
+            'messages' => $messages,
+            'is_handover_thread' => $handover,
+        ];
         // Restituisci il thread dell'utente corrente
-        return new WP_REST_Response($messages, 200);
+        return new WP_REST_Response($threadData, 200);
     }
 
     // Implementa la funzione get_thread_request per l'endpoint get-thread 
@@ -221,7 +386,10 @@ class Video_Ai_OpenAi {
                 $data = [
                     'sender' => $entry['role'],
                     'text' => $entry['content'][0]['text']['value'],
-                    'timestamp' => $entry['created_at']
+                    'timestamp' => $entry['created_at'],
+                    'type' => isset($entry['metadata']) && isset($entry['metadata']['wa']) ? 
+                                    'wa' 
+                                    : (isset($entry['metadata']) && isset($entry['metadata']['ig']) ? 'ig' : 'chat')
                 ];
                 if(isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true") {
                     $data['handover_message'] = true;
@@ -249,6 +417,8 @@ class Video_Ai_OpenAi {
             $messages = $this->get_thread_messages($assistant_id);
             $messages = json_decode($messages, true);
         }
+
+
         
         // Se non esiste un thread per l'utente corrente restituisci un errore
         if (!$messages) {
@@ -266,7 +436,6 @@ class Video_Ai_OpenAi {
                 $user = wp_get_current_user();
                 $user_id = isset($user->ID) ? $user->ID : null;
             }
-            error_log('get_thread_messages user_id: ' . $user_id);
             $userSessionId =  isset($_COOKIE['video_ai_chatbot_session_id']) ? $_COOKIE['video_ai_chatbot_session_id'] : null;
             $thread_id = $this->get_thread_id_for_user($user_id, $userSessionId, $assistantId);
             if(!isset($thread_id) || !$thread_id) {
@@ -291,8 +460,19 @@ class Video_Ai_OpenAi {
                 }
             }
         }
+        if(isset($params['video_ai_instagram_assistants'])) {
+            $igAssistants = json_decode($params['video_ai_instagram_assistants'], true);
+            unset($params['video_ai_instagram_assistants']);
+            if(is_array($igAssistants) && count($igAssistants) > 0) {
+                $this->ig = [];
+                foreach($igAssistants as $assistant) {
+                    $this->ig[$assistant['assistant']] = new Video_Ai_Chatbot_Instagram($this, $assistant['token'], $assistant['instagramId'], $assistant['assistant']);
+                }
+            }
+        }
         $updated = update_option('video_ai_chatbot_options', $params);
         $updatedWa = update_option('video_ai_whatsapp_assistants', $waAssistants);
+        $updatedIg = update_option('video_ai_instagram_assistants', $igAssistants);
         return $updated && $updatedWa;
     }
     
@@ -314,6 +494,7 @@ class Video_Ai_OpenAi {
     public function get_all_options() {
         $options = get_option('video_ai_chatbot_options');
         $waAssistants = get_option('video_ai_whatsapp_assistants', []);
+        $igAssistants = get_option('video_ai_instagram_assistants', []);
 
         if (false === $options) {
             return new WP_Error('no_options', 'Nessuna opzione trovata', ['status' => 404]);
@@ -325,11 +506,13 @@ class Video_Ai_OpenAi {
                 if (!current_user_can('manage_options')) {
                     unset($options[$key]);
                     unset($options['video_ai_whatsapp_assistants']);
+                    unset($options['video_ai_instagram_assistants']);
                 }
             }
         }
         if(current_user_can('manage_options')) {
             $options['video_ai_whatsapp_assistants'] = $waAssistants;
+            $options['video_ai_instagram_assistants'] = $igAssistants;
         }
         return $options;
     }
@@ -395,7 +578,6 @@ class Video_Ai_OpenAi {
         // Cerca i file restituiti tra quelli salvati
 
 
-        error_log('handle_retrieve_vector_store_files response: ' . json_encode($response));
         //filter all savedFiles from opeanAiFiles
         $foundFiles = array_filter($response['data'], function($file) use ($response, $savedFiles) {
             foreach($savedFiles as $savedFile) {
@@ -502,7 +684,8 @@ class Video_Ai_OpenAi {
         array_push($data['tools'], $this->is_user_registered_function());
         array_push($data['tools'], $this->add_product_to_cart_function());
         array_push($data['tools'], $this->get_allproducts_functions());
-        //array_push($data['tools'], $this->handover_function());
+        array_push($data['tools'], $this->handover_function());
+        array_push($data['tools'], $this->get_products_courses_map_function());
         return $data;
 
     }
@@ -581,7 +764,6 @@ class Video_Ai_OpenAi {
                         return $file;
                     }, $savedFiles); 
 
-                    error_log('updated_files' . json_encode($updatedFiles));
                     update_option('video_ai_chatbot_files', $updatedFiles);    
                 }
             } else if($type == 'preventivi' && count($files) > 0) {     
@@ -616,6 +798,7 @@ class Video_Ai_OpenAi {
             }
             $response = $this->client->modifyAssistant($id, $data);
             $decoded_res = json_decode($response);
+            error_log('modifyAssistant response: ' . json_encode($decoded_res));
             if(isset($decoded_res->error))
             {
                 throw new Exception($decoded_res->error->message);
@@ -1173,9 +1356,9 @@ function get_wc_products_full_info() {
                 throw new Exception('Failed to create vector store');
             }
             
-            $vectorStoreFiles = $this->communityopenai->createVectorStoreFiles($vectorStoreId, $files); 
-
+            $vectorStoreFiles = [];
             if($files && count($files) > 0) {
+                $vectorStoreFiles = $this->communityopenai->createVectorStoreFiles($vectorStoreId, $files); 
                 $savedFiles = get_option('video_ai_chatbot_files', []);
                 if(count($savedFiles) > 0) {
                     foreach($files as $file) {
@@ -1215,12 +1398,12 @@ function get_wc_products_full_info() {
         if($type == 'trascrizioni') {
             array_push($data['tools'], $this->get_functions());
             // array_push($data['tools'], $this->get_allcourses_functions());
-            array_push($data['tools'], $this->get_allproducts_functions());
-            // array_push($data['tools'], $this->get_products_courses_map_function());
-            array_push($data['tools'], $this->get_allproducts_with_courses_functions());
+            //array_push($data['tools'], $this->get_allproducts_functions());
+            array_push($data['tools'], $this->get_products_courses_map_function());
+            //array_push($data['tools'], $this->get_allproducts_with_courses_functions());
             array_push($data['tools'], $this->is_user_registered_function());
             array_push($data['tools'], $this->add_product_to_cart_function());
-            //array_push($data['tools'], $this->handover_function());
+            array_push($data['tools'], $this->handover_function());
         } else if($type == 'preventivi') {
             // array_push($data['tools'], $this->get_allproducts_functions());
             // array_push($data['tools'], $this->add_product_to_cart_function());
@@ -1327,7 +1510,16 @@ function get_wc_products_full_info() {
 
     
     public function handle_wa_chatbot_request($input_text, $assistant_id, $phoneNumber) {
-        $result = $this->handle_chatbot_request($input_text, $assistant_id, $phoneNumber, true);
+        $result = $this->handle_chatbot_request($input_text, $assistant_id, $phoneNumber, 'wa');
+        // if($result->error) {
+        //     return new WP_REST_Response(['message' => $result->message], 500);
+        // }
+        // $cb($result);
+        return $result; // new WP_REST_Response(['message' => $result->message], 200);
+    }
+
+    public function handle_ig_chatbot_request($input_text, $assistant_id, $accountId) {
+        $result = $this->handle_chatbot_request($input_text, $assistant_id, $accountId, 'ig');
         // if($result->error) {
         //     return new WP_REST_Response(['message' => $result->message], 500);
         // }
@@ -1347,10 +1539,8 @@ function get_wc_products_full_info() {
     private function get_thread_id_for_user($user_id, $userSessionId, $assistant_id)
     {
         $threadId = null;
-        error_log('get_thread_id_for_user user_id: ' . $user_id);
         if ($user_id != 0) {
             $userThreads  = json_decode(get_user_meta($user_id, 'openai_thread_id', true),true);
-            error_log('get_thread_id_for_user userThreads: ' . json_encode($userThreads));
         } else if (isset($userSessionId)) {
             //$threadId = get_option('thread_id' . $userSessionId);
             $threads = get_option('video_ai_chatbot_threads', []);
@@ -1366,7 +1556,7 @@ function get_wc_products_full_info() {
 
     }
 
-    private function get_last_assistant_used_for_user($user_id) {
+    public function get_last_assistant_used_for_user($user_id) {
         if ($user_id != 0) {
             $userAssistant = get_user_meta($user_id, 'video_ai_chatbot_last_assistant', true);
             return $userAssistant;
@@ -1509,8 +1699,14 @@ function get_wc_products_full_info() {
         return new WP_REST_Response(['message' => 'Runs cancelled successfully'], 200);
     }
 
+    private function remove_pattern($dataMessage) {
+        $pattern = '/【.*?†source】/u';
+        // Replace the pattern with an empty string
+        $dataMessage['value'] = preg_replace($pattern, '', $dataMessage['value']);
+        return $dataMessage;
+    }
 
-    public function handle_chatbot_request($input_text, $assistant_id, $userSessionId, $wa = false, $userpostprompt = null) {
+    public function handle_chatbot_request($input_text, $assistant_id, $userSessionId, $type = null, $userpostprompt = null) {
         if (!isset($this->client)) {
             throw new Exception('OpenAI client not initialized');
         }
@@ -1521,14 +1717,14 @@ function get_wc_products_full_info() {
             }
 
             $user_id = apply_filters('determine_current_user', true);
+            error_log('user_id: ' . $user_id);
             if($user_id == 0) {
-                $user = wp_get_current_user();;
+                $user = wp_get_current_user();
+                error_log('user: ' . json_encode($user));
                 $user_id = $user->ID;
             }
-
-            error_log('get_current_user_id: ' . json_encode(wp_get_current_user()));
             
-            $this->set_last_assistant_used_for_user($user_id, $assistant_id, $wa ? $userSessionId : null);
+            $this->set_last_assistant_used_for_user($user_id, $assistant_id, $type ? $userSessionId : null);
 
             $additional_instructions = '';	
             error_log('user_id: ' . $user_id);
@@ -1539,12 +1735,31 @@ function get_wc_products_full_info() {
             $threadId = $this->get_thread_id_for_user($user_id, $userSessionId, $assistant_id);
 
             error_log('threadId: ' . $threadId);
-            $thread = $this->get_or_create_thread($threadId, $assistant_id, $userSessionId, $wa);
-            error_log('thread: ' . json_encode($thread));
+            $thread = $this->get_or_create_thread($threadId, $assistant_id, $userSessionId, $type);
 
             $handover = "false";
             if(isset($thread['metadata']['handover']) && $thread['metadata']['handover'] == 'true') {
                 $handover = "true";
+                $query = ['limit' => 1];
+                $messages = $this->client->listThreadMessages($thread['id'], $query);
+                $messages = json_decode($messages, true);
+                if(!isset($messages) || isset($messages['error'])) {
+                    $handover = "false";
+                }
+                
+                //leggi il campo created_at dell'ultimo messaggio e se è passato più di 15 minuti da allora, allora setta handover = "false"
+                $lastMessage = $messages['data'][0];
+                error_log('lastMessage: ' . json_encode($lastMessage));
+                $lastMessageCreatedAt = $lastMessage['created_at'];
+                $currentTime = time();
+                error_log('currentTime: ' . $currentTime);
+                error_log('lastMessageCreatedAt: ' . $lastMessageCreatedAt);
+                $diff = $currentTime - $lastMessageCreatedAt;
+                if($diff > 900) {
+                    $handover = "false";
+                }
+
+                
             }
 
             $msgData = [
@@ -1556,6 +1771,7 @@ function get_wc_products_full_info() {
                 ]
             ];
 
+            
             $message = $this->client->createThreadMessage($thread['id'], $msgData);
 
 
@@ -1563,6 +1779,7 @@ function get_wc_products_full_info() {
                 throw new Exception('no message received');
             }
             if (isset($message->error)) {
+                error_log('message error: ' . json_encode($message));
                 throw new Exception($message['error']['message']);
             }
 
@@ -1573,9 +1790,11 @@ function get_wc_products_full_info() {
                     'success' => true,
                     "error" => false,
                     "message" => [ 'value' => 'handover'],
+                    'id' => $thread['id'],
                 ];
                 return $data;
             }
+
 
             $runData = [
                 'assistant_id' => $assistant_id,
@@ -1590,6 +1809,7 @@ function get_wc_products_full_info() {
 
             if (isset($run['error'])) {
                 $run = $run['error']['message'];
+                error_log('run error: ' . json_encode($run));
                 throw new Exception($run);
             }
 
@@ -1600,7 +1820,7 @@ function get_wc_products_full_info() {
                 sleep(1);
                 if($run['status'] == "requires_action" ) {
                     try {
-                        error_log('userId ' . $userId);
+                        error_log('userId ' . $user_id);
                         error_log('sessionId '. $userSessionId);
                         error_log('isset($user_id) '. isset($user_id));
                         $run = $this->handle_assistant_function_call(!isset($user_id) || !$user_id ? $userSessionId : $user_id, $run);
@@ -1613,8 +1833,8 @@ function get_wc_products_full_info() {
                 } else {
                     $run = $this->client->retrieveRun($thread['id'], $run['id']);
                     $run = json_decode($run, true);
-                    error_log('run: FUNCTION CALL userid' . $user_id);
-                    error_log('run: FUNCTION CALL sessionid' . $userSessionId);
+                    error_log('run: NORMAL userid' . $user_id);
+                    error_log('run: NORMAL sessionid' . $userSessionId);
                     error_log('run: NORMAL ' . json_encode($run));	
                 }
             }
@@ -1646,10 +1866,24 @@ function get_wc_products_full_info() {
                 $messages['data'][0]['content'][0]['text']['annotations'] = $annotations;
             }
 
+            $updatedThread = $this->client->retrieveThread($thread['id']);
+            $handoverMessage = false;
+            if(isset($updatedThread) && !isset($updatedThread['error'])) {
+                $updatedThread = json_decode($updatedThread, true);
+                if(isset($updatedThread['metadata']['handover']) && $updatedThread['metadata']['handover'] == 'true') {
+                    $handoverMessage = true;
+                }
+            }
+
             $data = [
                 "error" => false,
-                "message" => $messages['data'][0]['content'][0]['text'],
+                "message" => $this->remove_pattern($messages['data'][0]['content'][0]['text']),
+                'is_handover_message' => $handoverMessage,
+                'id' => $messages['data'][0]['id'],
+                'created_at' => $messages['data'][0]['created_at'],
             ];
+
+            error_log('handle_chatbot_request data: ' . json_encode($data));
 
             return $data;
         } catch (Exception $e) {
@@ -1737,6 +1971,7 @@ function get_wc_products_full_info() {
                     if(isset($arguments)) {
                         $motivation = $arguments['handover_motivation'];
                     }
+                    $handoverData = $this->handover($run, $arguments, $userId);
                     return [
                         'tool_call_id' => $toolCall['id'],
                         'output' =>  json_encode($this->handover($run, $arguments, $userId))
@@ -1785,7 +2020,7 @@ function get_wc_products_full_info() {
         return $result;
     }
 
-    private function get_or_create_thread($threadId, $assistant_id, $userSessionId, $wa = false) {
+    private function get_or_create_thread($threadId, $assistant_id, $userSessionId, $type = null) {
         if (isset($threadId)) {
             $thread = $this->client->retrieveThread($threadId);
             $thread = json_decode($thread, true);
@@ -1795,7 +2030,7 @@ function get_wc_products_full_info() {
             }
         }
 
-        if (!$thread || isset($thread['error'])) {
+        if (!isset($thread) || isset($thread['error'])) {
             $mData = [
                 'messages' => [
                     [
@@ -1805,15 +2040,18 @@ function get_wc_products_full_info() {
                 ]
             ];
 
-            if($wa) {
+            error_log('createThread type: '. $type);
+            if(!empty($type)) {
                 $mData['metadata'] = [
-                    'wa' => 'true'
+                    $type => 'true'
                 ];
             }
 
+            error_log('createThread mData: ' . json_encode($mData));
             $thread = $this->client->createThread($mData);
             $thread = json_decode($thread, true);
             if (isset($thread['error']) || !isset($thread['id'])) {
+                error_log('thread error: ' . json_encode($thread));
                 throw new Exception($thread['error']['message']);
             }
 

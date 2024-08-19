@@ -140,9 +140,11 @@ class Video_Ai_Chatbot_Public {
 			}
 			$assistants = $this->openai->get_filtered_assistants();
 			$messages = $this->openai->get_current_user_thread_message();
+			error_log('MESSAGES: ' . json_encode($messages));
 			$chatbot_name = get_option('video_ai_chatbot_options')['video_ai_chatbot_name_field'];
 			$user_id = apply_filters('determine_current_user', true);
 			$user_display_name = '';
+			$lastasAssistant = $this->openai->get_last_assistant_used_for_user($user_id);
             if($user_id != 0) {
                 $user_display_name = get_userdata($user_id)->display_name;
             }
@@ -155,6 +157,7 @@ class Video_Ai_Chatbot_Public {
 								'icon' => plugins_url('svg/chatbot-icon.svg', __FILE__),
 								'messages' => $messages,
 								'userDisplayName' => $user_display_name,
+								'lastAssistantId' => isset($lastasAssistant) ? $lastasAssistant : null
 							   )
 							);
 		}

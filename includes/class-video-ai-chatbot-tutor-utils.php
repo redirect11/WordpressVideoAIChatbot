@@ -10101,7 +10101,7 @@ public function get_single_course($course_id) {
 		$args = array(
 			'post_type'      => $post_type,
 			'post_status'    => 'publish',
-			'posts_per_page' => -1,
+			'posts_per_page' => 100,
 			'paged'          => $paged ? $paged : 1,
 			'order'          => 'ASC',
 			'orderby'        => 'title',
@@ -10109,7 +10109,7 @@ public function get_single_course($course_id) {
 
 
 
-		$args = apply_filters( 'tutor_rest_course_query_args', $args );
+		//$args = apply_filters( 'tutor_rest_course_query_args', $args );
 
 		$query = new WP_Query( $args );
 
@@ -10285,7 +10285,7 @@ public function get_products_courses_map() {
 	// Ottenere tutti i prodotti di WooCommerce
 	$args = array(
 		'post_type' => 'course',
-		'posts_per_page' => -1
+		'posts_per_page' => 100
 	);
 
 	$courses = $this->course();
