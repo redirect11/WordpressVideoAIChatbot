@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * @since 1.0.0
  */
-class TutorUtils {
+class CustomTutorUtils {
 
 	/**
 	 * Compatibility for splitting utils functions to specific model
@@ -2137,9 +2137,69 @@ class TutorUtils {
 				'offset'         => $offset,
 			);
 
-			return new \WP_Query( $course_args );
-		}
+			$query = new \WP_Query( $course_args );
 
+			if ( count( $query->posts ) > 0 ) {
+				// unset filter property.
+				array_map(
+					function ( $post ) {
+						unset( $post->filter );
+					},
+					$query->posts
+				);
+
+				$data = array(
+					'posts'        => array(),
+					'total_course' => $query->found_posts,
+					'total_page'   => $query->max_num_pages,
+				);
+
+				foreach ( $query->posts as $post ) {
+					$category = wp_get_post_terms( $post->ID, $this->course_cat_tax );
+
+					$tag = wp_get_post_terms( $post->ID, $this->course_tag_tax );
+
+					$author = get_userdata( $post->post_author );
+
+					if ( $author ) {
+						// Unset user pass & key.
+						unset( $author->data->user_pass );
+						unset( $author->data->user_activation_key );
+					}
+
+					is_a( $author, 'WP_User' ) ? $post->post_author = $author->data : new \stdClass();
+
+					$thumbnail_size      = apply_filters( 'tutor_rest_course_thumbnail_size', 'post-thumbnail' );
+					$post->thumbnail_url = get_the_post_thumbnail_url( $post->ID, $thumbnail_size );
+
+					$post->additional_info = $this->course_additional_info( $post->ID );
+
+					$post->ratings = tutor_utils()->get_course_rating( $post->ID );
+
+					$post->course_category = $category;
+
+					$post->course_tag = $tag;
+
+					$post->price = get_post_meta( $post->ID, '_regular_price', true );
+
+					$post->permalink = get_permalink( $post->ID );
+
+					$post = apply_filters( 'tutor_rest_course_single_post', $post );
+
+					array_push( $data['posts'], $post );
+				}
+
+				// $response = array(
+				// 	'code'    => 'success',
+				// 	'message' => __( 'Course retrieved successfully', 'tutor' ),
+				// 	'data'    => $data,
+				// );
+
+				return $data;
+			}
+
+			return array();
+		}
 		return false;
 	}
 
@@ -10033,8 +10093,6 @@ public function get_wc_product_full_info($product_id) {
         'price' => $product_obj->get_price(),
         'regular_price' => $product_obj->get_regular_price(),
         'sale_price' => $product_obj->get_sale_price(),
-        'sku' => $product_obj->get_sku(),
-        'stock_status' => $product_obj->get_stock_status(),
         'image_url' => wp_get_attachment_url($product_obj->get_image_id()),
         'categories' => wp_get_post_terms($product->ID, 'product_cat', array('fields' => 'names')),
         'tags' => wp_get_post_terms($product->ID, 'product_tag', array('fields' => 'names'))

@@ -68,11 +68,17 @@ class Video_Ai_Chatbot_Public {
 		return '';
 	}
 
-	public function init_cookies() {
-		if(!isset($_COOKIE['video_ai_chatbot_session_id']))
-		{
+	function init_cookies() {
+		if (!isset($_COOKIE['video_ai_chatbot_session_id'])) {
 			$hash = bin2hex(random_bytes(18));
-			setcookie( 'video_ai_chatbot_session_id', $hash, 0, COOKIEPATH, COOKIE_DOMAIN);
+			setcookie('video_ai_chatbot_session_id', $hash, [
+				'expires' => 0,
+				'path' => COOKIEPATH,
+				'domain' => COOKIE_DOMAIN,
+				'secure' => true,
+				'httponly' => true,
+				'samesite' => 'None',
+			]);
 		}
 	}
 
@@ -143,6 +149,7 @@ class Video_Ai_Chatbot_Public {
 			error_log('MESSAGES: ' . json_encode($messages));
 			$chatbot_name = get_option('video_ai_chatbot_options')['video_ai_chatbot_name_field'];
 			$user_id = apply_filters('determine_current_user', true);
+			error_log('USER ID: ' . $user_id);
 			$user_display_name = '';
 			$lastasAssistant = $this->openai->get_last_assistant_used_for_user($user_id);
             if($user_id != 0) {

@@ -234,6 +234,21 @@ class Video_Ai_Chatbot_Api {
             'permission_callback' => [$this, 'permission_callback']
         ]);
 
+        //registra un hoock per settare i numeri di nofitica per l'hadover
+        register_rest_route('video-ai-chatbot/v1', '/set-handover-notification-emails', [
+            'methods' => 'POST',
+            'callback' => [$this, 'set_handover_notification_emails'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+
+        //registra un hoock per ottenere i numeri di notifica per l'handover
+        register_rest_route('video-ai-chatbot/v1', '/get-handover-notification-emails', [
+            'methods' => 'GET',
+            'callback' => [$this, 'get_handover_notification_emails'],
+            'permission_callback' => [$this, 'permission_callback']
+        ]);
+        
+
         //registra una hook per la callback get_current_user_thread_message_request
         register_rest_route('video-ai-chatbot/v1', '/get-current-user-thread-messages', [
             'methods' => 'GET',
@@ -398,7 +413,7 @@ class Video_Ai_Chatbot_Api {
         $old_file_id = sanitize_text_field($request->get_param('file_id'));
         if($old_file_id && !is_numeric($old_file_id) ) {
             try {
-                $deletedFile = $this->delete_transcription($old_file_id);
+                $deletedFile = $this->openai->delete_transcription($old_file_id);
             } catch (Exception $e) {
                 return new WP_REST_Response(['message' => 'Failed to delete old transcription', 'error' => $e->getMessage()], 500);
             }
@@ -410,7 +425,7 @@ class Video_Ai_Chatbot_Api {
         $file = $_FILES['file'];
         $file_content = file_get_contents($file['tmp_name']);
         $transcription = json_decode($file_content, true);
-        
+        error_log('transcription: ' . json_encode($transcription));	
         if (json_last_error() !== JSON_ERROR_NONE) {
             return new WP_REST_Response(['message' => 'Invalid JSON file'], 400);
         }
@@ -591,6 +606,15 @@ class Video_Ai_Chatbot_Api {
 
     public function get_handover_notification_numbers() {
         return $this->openai->get_handover_notification_numbers();
+    }
+
+    public function set_handover_notification_emails(WP_REST_Request $request) {
+        $params = $request->get_body_params();
+        return $this->openai->set_handover_notification_emails($params);
+    }
+
+    public function get_handover_notification_emails() {
+        return $this->openai->get_handover_notification_emails();
     }
 
     public function get_current_user_thread_message_request() {

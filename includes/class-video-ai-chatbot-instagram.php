@@ -154,35 +154,63 @@ class Video_Ai_Chatbot_Instagram {
         $headers = $request->get_headers();
         $body = $request->get_body();
 
+        error_log("-------------- New Request POST --------------");
+        error_log("Headers: " . json_encode($headers, JSON_PRETTY_PRINT));
+        error_log("Body: " . json_encode(json_decode($body), JSON_PRETTY_PRINT));
+
         $data = json_decode($body, true);
 
-        // Verifica che il JSON contenga i campi necessari
-        if (isset($data['entry'][0]['messaging'][0]['sender']['id']) 
-            && isset($data['entry'][0]['messaging'][0]['message']['text'])) {
+        if (isset($data['entry'][0]['messaging'][0]['sender']['id'])) {
             error_log("Data is valid");
-            $senderId = $data['entry'][0]['messaging'][0]['sender']['id'];
-            $messageText = $data['entry'][0]['messaging'][0]['message']['text'];
+
             $is_echo = isset($data['entry'][0]['messaging'][0]['message']['is_echo']) ? $data['entry'][0]['messaging'][0]['message']['is_echo'] : false;
         
             if(!$is_echo) {
+
+                $senderId = $data['entry'][0]['messaging'][0]['sender']['id'];
+
+                error_log('type: ' . $data['entry'][0]['messaging'][0]['message']['attachments'][0]['type']);
+
+                if(isset($data['entry'][0]['messaging'][0]['message']['attachments'][0]['type']) 
+                    && $data['entry'][0]['messaging'][0]['message']['attachments'][0]['type'] == "audio") {
+
+                    $messageText = "Scusa, ma non posso ascoltare i messagi audio. Scrivimi un messaggio di testo.";
+                    $response = $this->send_instagram_message($senderId, $messageText);
+                    return new WP_REST_Response(['message' => 'Message sent successfully'], 200);
+
+                } else if (isset($data['entry'][0]['messaging'][0]['message']['text'])) {
+
+                    $messageText = $data['entry'][0]['messaging'][0]['message']['text'];
+                    $response = $this->openai->handle_ig_chatbot_request($messageText, $this->assistantId, $senderId);
+
+                    if($response['error']) {
+                        return new WP_REST_Response(['message' => 'Error processing request'], 400);
+                    }
+                    error_log("handle_post_request response: " . json_encode($response, JSON_PRETTY_PRINT));
+                    if($response['error']) 
+                    {
+                        return new WP_REST_Response(['message' => 'Invalid request data'], 400);
+                    }
+                    if($response['message']['value'] == "handover") {
+                        //error_log("result_send: " . json_encode($result_send , JSON_PRETTY_PRINT));
+                        return new WP_REST_Response(['message' => 'Handover'], 200);
+                    }
     
-                $response = $this->openai->handle_ig_chatbot_request($messageText, $this->assistantId, $senderId);
-                error_log("handle_post_request response: " . json_encode($response, JSON_PRETTY_PRINT));
-                if($response['error']) 
-                {
+                    $assistantResponse = $response['message'];
+                    $splittedResponse = $this->splitStringAtParagraphEnd($assistantResponse['value']);
+                    
+                    foreach ($splittedResponse as $responsePart) {
+                        $send_response = $this->send_instagram_message($senderId, $responsePart);
+                        if ($send_response->get_status() !== 200) {
+                            return $send_response;
+                        }
+                    }
+        
+                    return new WP_REST_Response(['message' => 'Message sent successfully'], 200);
+                } else {
                     return new WP_REST_Response(['message' => 'Invalid request data'], 400);
                 }
-                if($response['message']['value'] == "handover") {
-                    //error_log("result_send: " . json_encode($result_send , JSON_PRETTY_PRINT));
-                    return new WP_REST_Response(['message' => 'Handover'], 200);
-                }
-    
-                $send_response = $this->send_instagram_message($senderId, $response['message']['value']);
-                if ($send_response->get_status() !== 200) {
-                    return $send_response;
-                }
-    
-                return new WP_REST_Response(['message' => 'Message sent successfully'], 200);
+                
             } else {
                 return new WP_REST_Response(['message' => 'Message is echo'], 200);
             }
@@ -209,7 +237,7 @@ class Video_Ai_Chatbot_Instagram {
     
     
         if ($mode && $token) {
-            if ($mode === 'subscribe' && $token === $this->generateKey($this->token)) {
+            if ($mode === 'subscribe' && $token === '12345') {
                 $intChallenge = (int)$challenge;
                 return new WP_REST_Response($intChallenge, 200);
             } else {
@@ -242,5 +270,37 @@ class Video_Ai_Chatbot_Instagram {
         return $data;
     }
  
-}
 
+    private function splitStringAtParagraphEnd($text) {
+        $maxLength = 950;
+        $result = [];
+
+        while (strlen($text) > $maxLength) {
+            // Trova l'ultimo punto prima del novecentocinquantesimo carattere
+            $splitPosition = strrpos(substr($text, 0, $maxLength), '.');
+
+            // Se non trovi un punto, fai lo split al novecentocinquantesimo carattere
+            if ($splitPosition === false) {
+                $splitPosition = $maxLength;
+            }
+
+            // Dividi il testo in due parti
+            $part = substr($text, 0, $splitPosition + 1);
+            $text = substr($text, $splitPosition + 1);
+
+            // Rimuovi eventuali spazi bianchi all'inizio della parte rimanente
+            $text = ltrim($text);
+
+            // Aggiungi la parte al risultato
+            $result[] = $part;
+        }
+
+        // Aggiungi l'ultima parte rimanente
+        if (!empty($text)) {
+            $result[] = $text;
+        }
+
+        return $result;
+    }
+
+}

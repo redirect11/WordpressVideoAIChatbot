@@ -182,7 +182,7 @@ class Video_Ai_Chatbot {
 		$this->loader->add_action( 'wp_ajax_openai_delete_files_data_options', $plugin_admin, 'delete_file_data' );
 		$this->loader->add_action('rest_api_init', $this->api, 'register_api_hooks');
 		$this->loader->add_action('rest_api_init', $this->communityopenai, 'register_api_hooks');			
-		$this->loader->add_action( 'rest_api_init', $this, 'my_customize_rest_cors', 15 );
+		//$this->loader->add_action( 'rest_api_init', $this, 'my_customize_rest_cors', 15 );
 	}
 
 	/**
@@ -195,7 +195,7 @@ class Video_Ai_Chatbot {
 	private function define_public_hooks() {
 
 		$plugin_public = new Video_Ai_Chatbot_Public( $this->get_plugin_name(), $this->get_version(), $this->openai );
-		$this->loader->add_action( 'init', $plugin_public, 'init_cookies' );
+		$this->loader->add_action( 'plugins_loaded', $plugin_public, 'init_cookies' );
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
 		$this->loader->add_shortcode('openai_assistant',  $plugin_public, 'openai_assistant_shortcode');
@@ -245,15 +245,15 @@ class Video_Ai_Chatbot {
 	}
 
 
-	public function my_customize_rest_cors() {
-		remove_filter( 'rest_pre_serve_request', 'rest_send_cors_headers' );
-		add_filter( 'rest_pre_serve_request', function( $value ) {
-		header( 'Access-Control-Allow-Origin: *' );
-		header( 'Access-Control-Allow-Methods: GET,HEAD,OPTIONS,POST,PUT' );
-		header( 'Access-Control-Allow-Credentials: true' );
-		header( 'Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization' );
-		header( 'Access-Control-Expose-Headers: Link', false );
-		return $value;
-		} );
-	}
+	// public function my_customize_rest_cors() {
+	// 	remove_filter( 'rest_pre_serve_request', 'rest_send_cors_headers' );
+	// 	add_filter( 'rest_pre_serve_request', function( $value ) {
+	// 	header( 'Access-Control-Allow-Origin: *' );
+	// 	header( 'Access-Control-Allow-Methods: GET,HEAD,OPTIONS,POST,PUT' );
+	// 	header( 'Access-Control-Allow-Credentials: true' );
+	// 	header( 'Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization' );
+	// 	header( 'Access-Control-Expose-Headers: Link', false );
+	// 	return $value;
+	// 	} );
+	// }
 }

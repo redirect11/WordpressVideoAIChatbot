@@ -133,35 +133,48 @@ class Video_Ai_Chatbot_Wa_Webhooks {
         error_log("Body: " . json_encode(json_decode($body), JSON_PRETTY_PRINT));
 
         $data = json_decode($body, true);
+        
 
         // Verifica che il JSON contenga i campi necessari
-        if (isset($data['entry'][0]['changes'][0]['value']['contacts'][0]['wa_id']) 
-            && isset($data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body'])) {
+        if (isset($data['entry'][0]['changes'][0]['value']['contacts'][0]['wa_id'])) {
+        
             error_log("Data is valid");
             $phoneNumber = $data['entry'][0]['changes'][0]['value']['contacts'][0]['wa_id'];
-            $messageText = $data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body'];
-            $assistantId = $this->assistantId; // Sostituisci con l'ID dell'assistente desiderato
+            error_log("Message type: " . $data['entry'][0]['changes'][0]['value']['messages'][0]['type']);
+            if(isset($data['entry'][0]['changes'][0]['value']['messages'][0]['type']) 
+                && $data['entry'][0]['changes'][0]['value']['messages'][0]['type'] == 'audio') {
+                error_log("Audio message received");
+                $this->send_whatsapp_message($phoneNumber, "Scusa, ma non posso ascoltare i messagi audio. Scrivimi un messaggio di testo.", false);
+                return new WP_REST_Response(['message' => 'Statuses received'], 200);
+            } else if (isset($data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body'])) {
+                $messageText = $data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body'];
+                $assistantId = $this->assistantId; // Sostituisci con l'ID dell'assistente desiderato
+            
         
-            // Chiama la funzione handle_wa_chatbot_request
-            $response = $this->openai->handle_wa_chatbot_request($messageText, $assistantId, $phoneNumber);
-            error_log("handle_post_request response: " . json_encode($response, JSON_PRETTY_PRINT));
-            if($response['error']) 
-            {
-                return new WP_REST_Response(['message' => 'Invalid request data'], 400);
-            }
-            if($response['message']['value'] == "handover") {
-                //error_log("result_send: " . json_encode($result_send , JSON_PRETTY_PRINT));
-                return new WP_REST_Response(['message' => 'Handover'], 200);
-            }
-
-
-            error_log("messageText: " . $response['message']['value']);
-            error_log("phoneNumber: " . $phoneNumber);
-            error_log("assistantId: " . $assistantId);
-            $result_send = $this->send_whatsapp_message($phoneNumber, $response['message']['value'], false);
-            error_log("result_send: " . json_encode($result_send , JSON_PRETTY_PRINT));
+                // Chiama la funzione handle_wa_chatbot_request
+                $response = $this->openai->handle_wa_chatbot_request($messageText, $assistantId, $phoneNumber);
+                error_log("handle_post_request response: " . json_encode($response, JSON_PRETTY_PRINT));
+                if($response['error']) 
+                {
+                    return new WP_REST_Response(['message' => 'Invalid request data'], 400);
+                }
+                if($response['message']['value'] == "handover") {
+                    //error_log("result_send: " . json_encode($result_send , JSON_PRETTY_PRINT));
+                    return new WP_REST_Response(['message' => 'Handover'], 200);
+                }
     
-            return new WP_REST_Response(['message' => $response['message']['value']], 200);
+    
+                error_log("messageText: " . $response['message']['value']);
+                error_log("phoneNumber: " . $phoneNumber);
+                error_log("assistantId: " . $assistantId);
+                $result_send = $this->send_whatsapp_message($phoneNumber, $response['message']['value'], false);
+                error_log("result_send: " . json_encode($result_send , JSON_PRETTY_PRINT));
+        
+                return new WP_REST_Response(['message' => $response['message']['value']], 200);
+            } else {
+                return new WP_REST_Response(['message' => 'WA message type not supported'], 400);
+            }
+            
         } else if (isset($data['entry'][0]['changes'][0]['value']['statuses'])) {
             error_log("Statuses: " . json_encode($data['entry'][0]['changes'][0]['value']['statuses'], JSON_PRETTY_PRINT));
             return new WP_REST_Response(['message' => 'Statuses received'], 200);
@@ -234,7 +247,7 @@ class Video_Ai_Chatbot_Wa_Webhooks {
         error_log("Body: " . json_encode($params, JSON_PRETTY_PRINT));
     
         if ($mode && $token) {
-            if ($mode === 'subscribe' && $token === $this->generateKey($this->token)) {
+            if ($mode === 'subscribe' && $token === "12345") {
                 error_log("WEBHOOK_VERIFIED");
                 $intChallenge = (int)$challenge;
                 return new WP_REST_Response($intChallenge, 200);
