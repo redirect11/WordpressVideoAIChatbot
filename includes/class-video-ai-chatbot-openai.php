@@ -754,7 +754,7 @@ class Video_Ai_OpenAi {
                 $data = $this->update_assistant_trascrizioni($id, $name, $data, $vectorStoreIds, $files);
                 $vectorStoreIds = $data['tool_resources']['file_search']['vector_store_ids'];
                 if(isset($files) && count($files) > 0) {
-                    $savedFiles = get_option('video_ai_chatbot_files', []);
+                    $savedFiles = get_option('video_ai_chatbot_transcriptions', []);
                     //find file with file_id
                     $updatedFiles = array_map(function($file) use ($files, $vectorStoreIds) {
                         foreach($files as $fileId) {
@@ -768,16 +768,20 @@ class Video_Ai_OpenAi {
                         return $file;
                     }, $savedFiles); 
 
-                    update_option('video_ai_chatbot_files', $updatedFiles);    
+                    update_option('video_ai_chatbot_transcriptions', $updatedFiles);    
                 }
             } else if($type == 'preventivi' && count($files) > 0) {     
                 try {
-                    $this->communityopenai->createVectorStoreFiles($vectorStoreIds[0], $files);
+                    error_log('create vector store file count: ' . count($files));
+                    error_log('create vector store vector store id: ' . $vectorStoreIds[0]);
+                    $response = $this->communityopenai->createVectorStoreFiles($vectorStoreIds[0], $files);
                     //update video_ai_chatbot_files
+                    error_log('create vector store files response: ' . json_encode($response));
                     $savedFiles = get_option('video_ai_chatbot_files', []);
+                    error_log('saved files');
                     //find file with file_id
                     $updatedFiles = array_map(function($file) use ($files, $vectorStoreIds) {
-                        if($file['id'] == $files[0]) {
+                        if(isset($file) && $file['id'] == $files[0]) {
                             return ['id' => $file['id'], 
                                     'vector_store_id' => $vectorStoreIds[0] , 
                                     'file_name' => $file['file_name'], 
@@ -785,6 +789,8 @@ class Video_Ai_OpenAi {
                         }
                         return $file;
                     }, $savedFiles); 
+
+                    update_option('video_ai_chatbot_files', $updatedFiles);
 
                     // array_push($data['tools'], $this->get_allproducts_functions());
                     // array_push($data['tools'], $this->add_product_to_cart_function());
