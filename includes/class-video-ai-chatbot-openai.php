@@ -10,6 +10,7 @@ class Video_Ai_OpenAi {
     private $tutorUtils;
     private $wa = [];
     private $ig = [];
+    private $msgDatabase;
 
     /**
 	 * Initialize the class and set its properties.
@@ -18,9 +19,9 @@ class Video_Ai_OpenAi {
 	 * @param      string    $plugin_name       The name of this plugin.
 	 * @param      string    $version    The version of this plugin.
 	 */
-	public function __construct($communityopenai) {
+	public function __construct($communityopenai, $messagesDB) {
         $options = get_option('video_ai_chatbot_options');
-       
+        $this->msgDatabase = $messagesDB;
 
         //inizializzare tutte le options utilizzate in questa classe
         if($options) {
@@ -137,199 +138,82 @@ class Video_Ai_OpenAi {
         return $response;
     }
 
-    private function get_all_registered_user_threads() {
-        $users = get_users();
-        $allThreads = [];
-        foreach ($users as $user) {
-            $user_id = $user->ID;
-            $userThreads =  get_user_meta($user_id, 'openai_thread_id', true);
-            
-            foreach ($userThreads as $assistantId => $threadId) {
-                $thread = $this->client->retrieveThread($threadId);
-                $thread = json_decode($thread, true);
-                $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
-                $allThreads[] = [
-                    'thread_id' => $threadId,
-                    'assistant_id' => $assistantId,
-                    'user_id' => $user_id,
-                    'userName' => $user->user_login,
-                    'assistant_name' => $this->get_assistant_name_from_assistant_id($assistantId),
-                    'messages' => [],
-
-                ];
-            }
-        }
-        $threadsToSend = [];
-        foreach ($allThreads as $thread) {
-            $query = ['limit' => 50];
-            try {
-                $messages = $this->client->listThreadMessages($thread['thread_id'], $query);
-                $messages = json_decode($messages, true);
-                //check if metadata is set and contains handover 
-                $messages = $messages['data'];
-                $remappedMessages = array_map(function($entry) {
-                    return [
-                        'sender' => $entry['role'],
-                        'text' => $entry['content'][0]['text']['value'],
-                        'timestamp' => $entry['created_at'],
-                        'handover_message' => isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true",
-                        'type' => isset($entry['metadata']) && isset($entry['metadata']['wa']) ? 
-                                    'wa' 
-                                    : (isset($entry['metadata']) && isset($entry['metadata']['ig']) ? 'ig' : 'chat')
-                    ];
-                }, $messages);
-                usort($remappedMessages, function($a, $b) {
-                    return $b['timestamp'] < $a['timestamp'] ? 1 : -1;
-                });
-                $thread['messages'] = $remappedMessages;
-                $threadsToSend[] = $thread;
-            } catch (Exception $e) {
-                error_log('Error getting messages for thread ' . $thread['thread_id'] . ' for user ' . $thread['user_id'] . ': ' . $e->getMessage());
-            }
-        }
-        return new WP_REST_Response($threadsToSend, 200);
-    }
-
     //implementa la funzione get_all_thread_messages
     public function get_all_thread_messages() {
         // Cicla tutti gli utenti per ottenere i thread degli utenti
         $start_time = microtime(true); 
         $users = get_users();
-        $allThreads = [];
-        foreach($users as $user) {
-            $user_id = $user->ID;
-            $userThreads =  get_user_meta($user_id, 'openai_thread_id', true);
-            $userThreads = json_decode($userThreads, true);
-            //$userThreads = json_decode($userThreads, true);
-            if(isset($userThreads) && count($userThreads) > 0) {	
-                foreach($userThreads as $assistantId => $threadId) {
-                    $thread = $this->client->retrieveThread($threadId);
-                    $thread = json_decode($thread, true);
-                    $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
-                    $allThreads[] = [
-                        'thread_id' => $threadId,
-                        'assistant_id' => $assistantId,
-                        'user_id' => $user_id,
-                        'userName' => $user->user_login,
-                        'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
-                        'messages' => [],
-                        'is_handover_thread' => $is_handover_thread,
-                        'type' => 'chat'
-                    ];
-                }
-            }
-        }
-
-        $middle_time = microtime(true) - $start_time; 
-        error_log('get_all_thread_messages_request middle_time: ' . $middle_time);
-        
-        // Ottieni i thread delle sessioni
-        $waAssistants = get_option('video_ai_whatsapp_assistants', []);
-        $igAssistants = get_option('video_ai_instagram_assistants', []);
-
-        $sessionsThreads = get_option('video_ai_chatbot_threads', []);
-        if (isset($sessionsThreads)) {
-            foreach ($sessionsThreads as $sessionId => $session) {
-                foreach ($session as $assistantId => $threadId) {
-                    $waAssistant = array_filter($waAssistants, function($assistant) use ($assistantId) {
-                        return $assistant['assistant'] === $assistantId;
-                    });
-
-                    $igAssistant = array_filter($igAssistants, function($assistant) use ($assistantId) {
-                        return $assistant['assistant'] === $assistantId;
-                    });
-                    
-                    $thread = $this->client->retrieveThread($threadId);
-                    $thread = json_decode($thread, true);
-                    error_log('get_all_thread_messages_request thread: ' . json_encode($thread));
-                    $is_wa_thread = isset($thread['metadata']['wa']);
-                    $is_ig_thread = isset($thread['metadata']['ig']);
-                    $is_anoymous_thread = !isset($thread['metadata']['wa']) && !isset($thread['metadata']['ig']);
-                    $is_handover_thread = isset($thread['metadata']['handover']) && $thread['metadata']['handover'] === "true";
-                    if($is_wa_thread) {
-                        $allThreads[] = [
-                            'thread_id' => $threadId,
-                            'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
-                            'user_id' => $sessionId,
-                            'userName' => '+' . $sessionId,
-                            'outgoingNumberId' => $waAssistant[0]['outgoingNumberId'],
-                            'messages' => [],
-                            'is_handover_thread' => $is_handover_thread,
-                            'type' => 'wa'
-                        ];
-                    } else if($is_ig_thread) {
-                        $user_profile = $this->ig[$assistantId]->get_user_profile($sessionId); 
-                        $allThreads[] = [
-                            'thread_id' => $threadId,
-                            'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
-                            'user_id' => $sessionId,
-                            'userName' => $sessionId,
-                            'instagramId' => $igAssistant[0]['instagramId'],
-                            'messages' => [],
-                            'is_handover_thread' => $is_handover_thread,
-                            'type' => 'ig',
-                            'user_profile' => $user_profile
-                        ];
-                    } 
-                    else if($is_anoymous_thread) {
-                        $allThreads[] = [
-                            'thread_id' => $threadId,
-                            'assistantName' => $this->get_assistant_name_from_assistant_id($assistantId),
-                            'user_id' => $sessionId,
-                            'userName' => $sessionId,
-                            'messages' => [],
-                            'is_handover_thread' => $is_handover_thread,
-                            'type' => 'anon'
-                        ];
-                    }
-                }
-            }
-        }
-    
-        // Recupera i messaggi per ogni thread
+        $allThreads = $this->msgDatabase->get_all_threads();
         $threadsToSend = [];
         foreach ($allThreads as $thread) {
-            $query = ['limit' => 50];
             try {
-                $messages = $this->client->listThreadMessages($thread['thread_id'], $query);
-                $messages = json_decode($messages, true);
-                if(isset($messages['error'])) {
-                    error_log('get_all_thread_messages_request error: ' . $messages['error']['message']);
-                    continue;
-                }
 
-                //check if metadata is set and contains handover 
-                $messages = $messages['data'];
+               // $thread = json_decode($thread, true);
+                
+                // // //check if metadata is set and contains handover 
+                 $thread = json_decode(json_encode($thread), true);
+                 error_log('get_all_thread_messages_request messages: ' . json_encode($thread));
+                 $messages = json_decode($thread['thread'], true);
+                 $messages = $messages['data'];
+                 error_log('get_all_thread_messages_request messages2222: ' . json_encode($messages));
+
                 $remappedMessages = array_map(function($entry) use ($thread) {
+
                     $message = [
                         'sender' => $entry['role'],
                         'text' => $entry['content'][0]['text']['value'],
                         'timestamp' => $entry['created_at'],
                         'handover_message' => isset($entry['metadata']) && isset($entry['metadata']['handover_message']) && $entry['metadata']['handover_message'] === "true",
-                        'type' => $thread['type']
+                        'type' => $thread['chatType']
                     ];
 
                     if($message['type'] === 'wa') {
                         $message['outgoingNumberId'] = $thread['outgoingNumberId'];
                     } else if($message['type'] === 'ig') {
                         $message['instagramId'] = $thread['instagramId'];
-                        //$message['sender']
                     }
 
                     return $message;
                 }, $messages);
+
+                error_log('get_all_thread_messages_request remappedMessages: ' . json_encode($remappedMessages));
+
                 usort($remappedMessages, function($a, $b) {
                     return $b['timestamp'] < $a['timestamp'] ? 1 : -1;
                 });
-                $thread['messages'] = $remappedMessages;
-                $threadsToSend[] = $thread;
+
+                $remappedThread = [
+                    'thread_id' => $thread['thread_id'],
+                    'assistant_id' => $thread['assistant_id'],
+                    'user_id' => $thread['user_id'],
+                    'userName' => $thread['userName'],
+                    'assistantName' => $thread['assistantName'],
+                    'messages' => $remappedMessages,
+                    'is_handover_thread' => $thread['is_handover_thread'] === "true",
+                    'type' => $thread['chatType'],
+                ];
+
+                if($remappedThread['type'] === 'wa') {
+                    $remappedThread['outgoingNumberId'] = $thread['outgoingNumberId'];
+                } else if($remappedThread['type'] === 'ig') {
+                    $remappedThread['instagramId'] = $thread['instagramId'];
+                } else if($remappedThread['type'] === 'anon') {
+                    $remappedThread['userName'] = $thread['userName'];
+                } else if($remappedThread['type'] === 'fb') {
+                    $remappedThread['facebookId'] = $thread['facebookId'];
+                }
+
+                $threadsToSend[] = $remappedThread;
+                return new WP_REST_Response($threadsToSend, 200);
+
+                error_log('get_all_thread_messages_request messages: ' . json_encode($messages));
             } catch (Exception $e) {
                 error_log('Error getting messages for thread ' . $thread['thread_id'] . ' for user ' . $thread['user_id'] . ': ' . $e->getMessage());
             }
         }
         $end_time = microtime(true) - $start_time;
         error_log('get_all_thread_messages_request end_time: ' . $end_time);
-        return new WP_REST_Response($threadsToSend, 200);
+        return new WP_REST_Response([], 200);
     }
 
     public function get_current_user_thread_message() {
@@ -351,6 +235,7 @@ class Video_Ai_OpenAi {
         $thread = json_decode($thread, true);
 
         $messages = $this->get_thread_messages($assistant_id);
+        error_log('get_current_user_thread_message_request messages: ' . json_encode($messages));
         $messages = !is_array($messages) ? json_decode($messages, true) : $messages;    
 
         if(isset($messages['error'])) {
@@ -825,6 +710,7 @@ class Video_Ai_OpenAi {
         $metadata = $thread['metadata'];
         $metadata['handover'] = $isHandover ? "true" : "false";
         $data = ['metadata' => $metadata];
+        
         $response = $this->client->modifyThread($threadId, $data);
         return $response;
     } 
@@ -1938,6 +1824,7 @@ function get_wc_products_full_info() {
             }
 
             $start_time = time();
+            $userId = !isset($user_id) || !$user_id ? $userSessionId : $user_id;
             // Wait for the response to be ready
             while (($run['status'] == "in_progress" || $run['status'] == "queued") || $run['status'] == "requires_action" && (time() - $start_time) < 5000) {
                 //error_log('run status: ' . json_encode($run['status']));
@@ -1951,7 +1838,7 @@ function get_wc_products_full_info() {
                         if(isset($user_id)) {
                             $user_display_name = get_userdata($user_id)->display_name;
                         }
-                        $userId = !isset($user_id) || !$user_id ? $userSessionId : $user_id;
+                        
                         $run = $this->handle_assistant_function_call($userId, $run, $user_display_name);
                         error_log('run: FUNCTION CALL userid ' . $user_id);
                         error_log('run: FUNCTION CALL sessionid ' . $userSessionId);
@@ -1976,7 +1863,9 @@ function get_wc_products_full_info() {
                 throw new Exception('Timeout');
             }
 
+
             $query = ['limit' => 20];
+            
             $messages = $this->client->listThreadMessages($thread['id'], $query);
             $messages = json_decode($messages, true);
 
@@ -2011,6 +1900,29 @@ function get_wc_products_full_info() {
                 'id' => $messages['data'][0]['id'],
                 'created_at' => $messages['data'][0]['created_at'],
             ];
+
+            $userName = $user_display_name;
+            $assistantName = $this->get_assistant_name_from_assistant_id($assistant_id);
+
+            if($type == "wa") {
+                $userName = "+" . $userSessionId;
+            } else if($type == "ig") {
+                $userName = $userSessionId;
+            } else if($type == "anon") {
+                $userName = "Non registrato";
+            }
+
+            $this->msgDatabase->save_thread($userId, 
+                                            $assistant_id, 
+                                            $assistantName, 
+                                            get_userdata($user_id)->display_name,  
+                                            isset($thread['metadata']['handover']) && $thread['metadata']['handover'] ? 'true' : 'false',
+                                            $type,
+                                            $thread['id'],
+                                            json_encode($messages), 
+                                            $outgoingNumberId = $type == "wa" ? $userSessionId : "",
+                                            $instagramId = $type == "ig" ? $userSessionId : "",
+                                            $facebookId = "");
 
             error_log('handle_chatbot_request data: ' . json_encode($data));
 

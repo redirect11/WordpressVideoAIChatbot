@@ -22,6 +22,33 @@
  */
 class Video_Ai_Chatbot_Activator {
 
+	public static function create_table() {
+		global $wpdb;
+        $table_name = $wpdb->prefix . 'video_ai_chatbot_messages';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            user_id TEXT NOT NULL,
+            assistant_id TEXT NOT NULL,
+			assistantName TEXT NOT NULL,
+			userName TEXT,
+			is_handover_thread TEXT NOT NULL,
+			chatType TEXT NOT NULL,
+			outgoingNumberId TEXT,
+			instagramId TEXT,
+			facebookId TEXT,
+			thread_id TEXT NOT NULL,
+            thread TEXT NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME DEFAULT NULL,
+            PRIMARY KEY (id)
+        ) $charset_collate;";
+
+        require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+        dbDelta( $sql );
+    }
+
 	/**
 	 * Short Description. (use period)
 	 *
@@ -73,6 +100,10 @@ class Video_Ai_Chatbot_Activator {
 			update_option('video_ai_chatbot_options', $options);
 		}
 
+		Video_Ai_Chatbot_Activator::create_table();
+
 	}
+
+
 
 }

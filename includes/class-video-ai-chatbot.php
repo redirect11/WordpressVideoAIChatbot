@@ -62,6 +62,7 @@ class Video_Ai_Chatbot {
 	private $communityopenai;
 	private $wa_webhooks;
 	private $api;
+	private $messagesDB;
 
 	/**
 	 * Define the core functionality of the plugin.
@@ -141,9 +142,13 @@ class Video_Ai_Chatbot {
 
 		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-instagram.php';
 
+		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'includes/class-video-ai-chatbot-messages-db.php';
+
 		$this->loader = new Video_Ai_Chatbot_Loader();
 		$this->communityopenai = new Video_Ai_Community_OpenAi();
-		$this->openai = new Video_Ai_OpenAi($this->communityopenai);
+		$this->messagesDB = new Video_AI_Chatbot_Messages_DB();
+
+		$this->openai = new Video_Ai_OpenAi($this->communityopenai, $this->messagesDB);
 		$this->api = new Video_Ai_Chatbot_Api($this->openai);
 	}
 
